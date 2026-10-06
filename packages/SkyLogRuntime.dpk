@@ -1,0 +1,14 @@
+package SkyLogRuntime;
+
+{$RUNONLY}
+{$DESCRIPTION 'SkyLog - captura de erros por formulario VCL'}
+
+requires
+  rtl,
+  vcl,
+  FireDAC;
+
+contains
+  SkyLog in '..\source\SkyLog.pas';
+
+end.

@@ -1,0 +1,15 @@
+package SkyLogDesign;
+
+{$DESIGNONLY}
+{$DESCRIPTION 'SkyLog - registro na paleta de componentes'}
+
+requires
+  rtl,
+  vcl,
+  designide,
+  SkyLogRuntime;
+
+contains
+  SkyLog.Register in '..\source\SkyLog.Register.pas';
+
+end.
