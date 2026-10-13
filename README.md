@@ -4,6 +4,18 @@
 
 Arquivos em UTF-8 separados por dia e execução, com rotação por tamanho, retenção configurável e data/hora local com milissegundos e fuso. A pasta é criada automaticamente. O componente mantém o tratamento normal da aplicação: registra e propaga a exceção original.
 
+## Guia rápido
+
+1. [Instale o pacote](#instalação-na-paleta) da sua versão do Delphi.
+2. Coloque um `TSkyLog` em cada formulário que deseja monitorar. O formulário deve ser o `Owner` (proprietário) do logger; os componentes monitorados devem pertencer à sua árvore de proprietários.
+3. Configure `LogDirectory` para uma pasta com permissão de escrita. Se ficar vazio, será usada a pasta `logs` junto ao executável.
+4. Mantenha `Enabled = True`. Instâncias colocadas pela IDE são ativadas automaticamente ao carregar o formulário.
+5. Quando uma exceção escapar de um evento monitorado, consulte o arquivo na subpasta `skylog-v2-...` do destino. O registro identifica a origem e o motivo; arquivo e linha do fonte dependem de uma pilha com símbolos.
+
+Não é necessário alterar o DPR nem `Application.OnException`. Se você tratar e consumir o erro com `try/except`, use `LogException` dentro do `except`. Para componentes criados em código ou eventos trocados durante a execução, chame `Refresh` depois da configuração.
+
+**Consulta:** [Compatibilidade](#compatibilidade) · [Configuração](#configuração) · [Como ler o log](#como-ler-o-log) · [Métodos públicos](#métodos-públicos) · [Componentes criados em código](#componentes-criados-em-código) · [Registro manual](#erros-tratados-e-operações-explícitas) · [Cobertura e limites](#cobertura-e-limites) · [Gravação e retenção](#gravação)
+
 ## Compatibilidade
 
 - Windows, VCL, Win32 e Win64.
@@ -46,7 +58,9 @@ nomes e caminhos de saída das duas versões.
 No Rio, o timer interno só é criado
 ao iniciar o monitoramento em execução; o comportamento do Delphi 13 é preservado.
 
-Propriedades principais:
+## Configuração
+
+Propriedades de configuração:
 
 | Propriedade | Função |
 | --- | --- |
@@ -58,6 +72,11 @@ Propriedades principais:
 | `ApplicationBuild` | Identificador de build, que pode receber a identificação da entrega. Vazio: quarto número de `FileVersion`; sem esse recurso, `n/a`. |
 | `MaxFileSizeMB` | Limite por segmento, em unidades de 1.048.576 bytes. Padrão: `10`. Zero desativa a rotação por tamanho. Negativos são recusados. |
 | `RetentionDays` | Número de dias de calendário preservados, incluindo hoje. Padrão: `30`. Zero desativa a limpeza. Negativos são recusados. |
+
+Eventos e informações de diagnóstico (as propriedades `LastWriteError`, `LastCleanupError`, `Diagnostics` e `MonitoredForm` são consultadas em código):
+
+| Membro | Função |
+| --- | --- |
 | `OnWriteError` | Avisa quando não foi possível gravar; recebe arquivo e mensagem. |
 | `LastWriteError` | Última falha de gravação, disponível em código. Esvazia após gravação bem-sucedida. |
 | `OnCleanupError` | Avisa sobre falha de retenção, separadamente da gravação; recebe caminho e mensagem. O registro atual já foi gravado. |
@@ -65,28 +84,105 @@ Propriedades principais:
 | `OnGetStackTrace` | Integra um provedor de pilha. Recebe a exceção, o endereço disponível e o texto da pilha por referência. |
 | `Diagnostics` | Lista de eventos cuja assinatura não pôde ser interceptada e de falhas em `OnDiagnostics`. É renovada por `Refresh`. |
 | `OnDiagnostics` | Notificação ao final de `Refresh` quando há diagnósticos. Eles também são enviados à saída de depuração. |
+| `MonitoredForm` | Formulário que é o `Owner` do logger; retorna `nil` se o proprietário não for um formulário. |
 
 Instâncias carregadas pelo DFM são ativadas em `Loaded`, antes do `OnCreate` no ciclo normal da VCL (`OldCreateOrder=False`). Nenhuma alteração no DPR ou em `Application.OnException` é necessária.
 
-## Formato do registro
+## Como ler o log
 
-Cada registro mantém uma linha principal e linhas complementares indentadas. A linha principal começa com data/hora em `yyyy-mm-ddThh:mm:ss.zzz±hh:mm`, usando o fuso local da máquina no instante da captura, e contém `Formato: 2`. O horário e o deslocamento são derivados do mesmo instante UTC, inclusive durante a transição do horário de verão.
+### Exemplo de erro de conversão
 
-Os campos são `Aplicacao`, `Versao`, `Build`, `Execucao`, `Origem`, `Formulario`, `Componente`, `Evento`, `Metodo`, `Excecao`, `Codigo`, `Fase`, `PID`, `Thread`, `Correlacao`, `Registro`, `Endereco` e `Erro`. Valores textuais ausentes e endereços indisponíveis aparecem como `n/a`. A versão automática vem do executável da aplicação, não da BPL do SkyLog.
+```text
+[2026-10-13T16:16:41.291-04:00] Formato: 2 | Aplicacao: Project1.exe | Versao: 1.0.0.0 | Build: 0 | Execucao: 717ABCA893F046BF96E0D266B24F0E60 | Origem: Form1.Button1 | Formulario: Form1 | Componente: Button1 (TButton) | Evento: OnClick | Metodo: TForm1.Button1Click | Excecao: EConvertError | Codigo: n/a | Fase: Evento | PID: 12784 | Thread: 11012 | Correlacao: {2F7D5BD3-6EEF-477E-AC1B-D862D1C1D659} | Registro: {C580F9A0-6321-4CC9-B296-F293CA53224A} | Endereco: 0x00424A56 | Erro: 'a' is not a valid integer value
+  Contexto: Form1.Button1.WindowProc(0x0202) [n/a] -> Form1.WindowProc(0x0111) [n/a] -> Form1.Button1.WindowProc(0xBD11) [n/a] -> Form1.Button1.OnClick [TForm1.Button1Click]
+  StackTrace: n/a
+```
 
-`Execucao` identifica a sessão da biblioteca no processo e é compartilhado pelos componentes. `Correlacao` agrupa a cadeia de eventos/operações monitorados; pode reunir mais de uma exceção na mesma ação. `Registro` é exclusivo de cada entrada. Uma chamada manual fora de uma cadeia monitorada recebe sua própria correlação, além do identificador de registro.
+**Leitura do exemplo:** durante o clique em `Button1`, uma conversão do texto `'a'` para inteiro falhou. A exceção escapou de `TForm1.Button1Click`, possivelmente vinda de uma rotina chamada por ele. O log identifica o evento e o motivo, mas não informa a linha exata nem qual função fez a conversão.
 
-O caminho `Origem` segue a cadeia real de **Owner**, não a sequência em que as telas foram abertas nem o `Parent` visual. Formulários criados com `Application` como Owner não produzem automaticamente uma hierarquia de telas.
+### Campos da linha principal
 
-O evento `OnError` identifica a query; a linha `Contexto` também mostra o botão/evento que chamou a operação. `Metodo` aparece como `n/a` quando o evento não tinha um handler do desenvolvedor. Quando o nome do método não está na RTTI, o log usa classe e endereço.
+| Campo | Significado e utilidade |
+| --- | --- |
+| Data/hora entre `[]` | Momento da captura no fuso local da máquina. No exemplo: 13/10/2026 às 16:16:41 e 291 milissegundos; `T` separa data e hora, e `-04:00` indica quatro horas atrás de UTC. Permite ordenar e comparar ocorrências entre fusos. |
+| `Formato` | Versão da estrutura do registro, atualmente `2`. Orienta ferramentas que leem o arquivo; é independente da versão da aplicação. |
+| `Aplicacao` | Nome do executável, como `Project1.exe`, ou o valor de `ApplicationName`. Identifica qual programa gerou o erro. |
+| `Versao` | `FileVersion` numérica do executável ou `ApplicationVersion`. Ajuda a localizar as versões afetadas. A versão automática vem da aplicação, não da BPL do SkyLog. |
+| `Build` | Identificação da compilação/entrega. Usa `ApplicationBuild` ou, por padrão, o quarto número de `FileVersion`. Em `1.0.0.0`, o build automático é `0`. |
+| `Execucao` | Identificador da sessão da biblioteca no processo, compartilhado pelos componentes. Agrupa logs da mesma execução e separa execuções diferentes. |
+| `Origem` | Caminho do componente pela cadeia de `Owner`, como `Form1.Button1`. Distingue componentes com nomes iguais em formulários diferentes. |
+| `Formulario` | Nome do formulário monitorado. Pode ser diferente do título exibido na janela (`Caption`). |
+| `Componente` | Nome e classe do componente: `Button1 (TButton)` identifica a instância e seu tipo. |
+| `Evento` | Evento ou operação em andamento, como `OnClick`, `OnError`, `ExecSQL` ou `WindowProc(0x0202)`. |
+| `Metodo` | Handler (método ligado ao evento), como `TForm1.Button1Click`. É o ponto inicial da investigação; a falha pode vir de uma rotina chamada por ele. Pode ser informado manualmente em `LogException`. |
+| `Excecao` | Classe da exceção. `EConvertError` indica erro de conversão; a mensagem explica qual conversão falhou. |
+| `Codigo` | Código numérico extraído de erros FireDAC ou `EOSError`. Para o `EConvertError` do exemplo, aparece `n/a`, pois a biblioteca não extrai um código desse tipo de exceção. |
+| `Fase` | Ponto em que o SkyLog observou a exceção. Os valores estão na tabela abaixo. Não representa o nível de gravidade. |
+| `PID` | Identificador do processo no Windows. Ajuda a relacionar o log à instância em ferramentas de diagnóstico. Pode ser reutilizado pelo Windows após o processo terminar. |
+| `Thread` | Identificador da thread (linha de execução) que gravou o registro. No uso suportado pelo componente, a captura ocorre na thread principal da VCL. |
+| `Correlacao` | Identificador da cadeia de eventos/operações monitorados. Reúne registros relacionados à mesma ação, que pode produzir mais de uma exceção. |
+| `Registro` | Identificador exclusivo desta entrada. Permite apontar uma ocorrência específica, mesmo quando várias têm a mesma correlação. |
+| `Endereco` | Endereço de memória associado à exceção; `0x` indica hexadecimal. Na captura de evento, vem de `ExceptAddr`. Com símbolos da mesma compilação, ajuda a localizar o código; sozinho não informa a linha do fonte. |
+| `Erro` | Mensagem da exceção. No exemplo, significa: “`'a'` não é um valor inteiro válido”. |
 
-As quebras de linha da mensagem são preservadas como `\r\n`, evitando que uma mensagem multilinha se confunda com uma nova entrada. Barras e delimitadores também são escapados. O log inclui os erros nativos da coleção `Errors` do FireDAC e os erros internos de Array DML. SQL e parâmetros não são acrescentados automaticamente.
+`n/a` significa informação ausente, indisponível ou não aplicável ao campo. Não indica, por si só, falha na gravação.
+
+| `Fase` | Quando é usada |
+| --- | --- |
+| `Evento` | A exceção escapou de um handler monitorado, como `OnClick`. |
+| `Mensagem` | A exceção escapou do processamento de uma mensagem em `WindowProc`. |
+| `FireDAC` | O banco notificou um erro por um evento `TFDErrorEvent`, como `OnError`. |
+| `Manual` | A aplicação chamou `LogException`. |
+| `Operacao` | A exceção escapou de uma ação passada a `Execute`. |
+
+Para distinguir os identificadores: **`Execucao` = sessão do programa; `Correlacao` = cadeia monitorada; `Registro` = entrada no arquivo**. Uma chamada manual fora de uma cadeia monitorada recebe sua própria correlação, além do identificador de registro.
+
+### Contexto: como a execução chegou ao erro
+
+A linha `Contexto` mostra os eventos e operações monitorados ainda encadeados no momento da captura. Leia da esquerda para a direita, do mais externo até o mais interno. Cada etapa usa `origem.evento [método]`.
+
+No exemplo, `WindowProc` é a rotina que processa mensagens de um controle ou formulário:
+
+| Etapa | O que aconteceu |
+| --- | --- |
+| `Form1.Button1.WindowProc(0x0202)` | O botão processou `WM_LBUTTONUP`, a liberação do botão esquerdo do mouse. |
+| `Form1.WindowProc(0x0111)` | O formulário processou `WM_COMMAND`, mensagem usada para receber notificações de controles, entre outras finalidades. |
+| `Form1.Button1.WindowProc(0xBD11)` | O botão processou `CN_COMMAND`, mensagem interna da VCL ligada ao encaminhamento do comando ao controle. |
+| `Form1.Button1.OnClick [TForm1.Button1Click]` | O processamento chegou ao evento de clique e ao método da aplicação do qual escapou a exceção. |
+
+Os `[n/a]` das etapas `WindowProc` são esperados: o SkyLog não atribui um nome de handler a esses níveis. As quatro etapas descrevem o processamento do mesmo clique, não quatro erros. O contexto não é um histórico de cliques anteriores nem uma pilha completa de todas as funções chamadas.
+
+Os códigos das mensagens podem ser consultados em [WM_LBUTTONUP](https://learn.microsoft.com/en-us/windows/win32/inputdev/wm-lbuttonup), [WM_COMMAND](https://learn.microsoft.com/en-us/windows/win32/menurc/wm-command) e [constantes de Vcl.Controls](https://docwiki.embarcadero.com/Libraries/Sydney/en/Vcl.Controls).
+
+### StackTrace e detalhes de banco
+
+`StackTrace` é a pilha de chamadas da exceção: pode revelar as rotinas envolvidas e, com os símbolos adequados, arquivos e linhas. `StackTrace: n/a` significa que nenhuma pilha foi obtida. O SkyLog consulta `Exception.StackTrace` e oferece `OnGetStackTrace` para integrar um provedor; ele não inclui um provedor externo. Veja os [requisitos e limites da pilha](#cobertura-e-limites).
+
+Falhas ao obter a pilha acrescentam `StackTraceErro`, preservando o restante do registro. Isso é diferente de uma pilha simplesmente indisponível.
+
+Em erros de banco, linhas `Banco[n]` trazem o código, objeto e mensagem de cada erro nativo da coleção `Errors` do FireDAC, incluindo os erros internos de Array DML. O índice `n` começa em zero. SQL e parâmetros não são acrescentados automaticamente. O evento `OnError` identifica a query quando essa é a origem reconhecida; `Contexto` pode mostrar o botão/evento que chamou a operação.
 
 Uma falha de banco pode produzir registros nas fases `FireDAC` e `Evento`, com a **mesma correlação e identificadores de registro diferentes**: o primeiro observa a notificação do banco, o segundo registra a exceção saindo do handler. O FireDAC também pode notificar um erro de Array DML. Isso preserva o erro mesmo quando o handler o trata; não significa necessariamente novas falhas. A propagação da mesma exceção entre eventos aninhados é registrada uma vez.
 
-`Contexto` e `Banco[n]` são incluídos quando existem informações correspondentes. A linha `StackTrace` contém a pilha disponível ou `n/a`. Falhas na obtenção da pilha acrescentam `StackTraceErro` e não impedem a gravação do restante da entrada.
+### Regras do formato
+
+Cada entrada contém uma linha principal e linhas complementares indentadas. `Contexto` e `Banco[n]` só aparecem quando há informações correspondentes; `StackTrace` aparece mesmo quando vale `n/a`.
+
+- A data/hora usa `yyyy-mm-ddThh:mm:ss.zzz±hh:mm`. Horário local e deslocamento são derivados do mesmo instante UTC, inclusive nas transições de horário de verão.
+- `Origem` segue a cadeia real de **Owner**, não a sequência de abertura das telas nem o `Parent` visual. Formulários cujo Owner é `Application` não formam automaticamente uma hierarquia de telas.
+- `Metodo` pode ser `n/a` quando não há handler identificado. Quando existe handler, mas seu nome não está na RTTI (informações de tipos disponíveis em execução), o log usa classe e endereço.
+- Quebras de linha da mensagem são escritas como `\r` e `\n`; uma sequência CRLF aparece como `\r\n`. Barras invertidas e delimitadores `|` também são escapados, evitando confundir o conteúdo com novos campos ou entradas.
 
 Leitores do formato anterior precisam aceitar `Formato: 2`, o horário com fuso e os novos campos. `Ocorrencia` foi substituído por `Correlacao`; a classe da exceção agora tem o rótulo `Excecao`. Os arquivos antigos permanecem intactos.
+
+## Métodos públicos
+
+| Método | Quando usar |
+| --- | --- |
+| `Refresh` | Após criar/configurar componentes ou trocar handlers em execução. Atualiza as interceptações da árvore pertencente ao formulário. |
+| `OwnsComponent(Component)` | Consulta se um componente pertence ao escopo deste logger, respeitando a cadeia de `Owner` e os limites entre formulários. |
+| `LogException(E, Component, EventName, HandlerName)` | Registra uma exceção explicitamente, por exemplo dentro de um `except` que a consome. Só `E` é obrigatório; componente omitido ou `nil` usa o formulário. Os textos de evento e método são opcionais. |
+| `Execute(Component, EventName, Action)` | Executa uma rotina anônima com um nome de operação e registra a exceção que escapar dela. Componente `nil` usa o formulário. A exceção original continua sendo propagada. |
 
 ## Componentes criados em código
 
