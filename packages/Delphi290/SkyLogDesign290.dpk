@@ -1,0 +1,19 @@
+package SkyLogDesign290;
+
+{$IFNDEF VER360}
+  {$MESSAGE FATAL 'Este pacote deve ser compilado com Delphi 12 Athens.'}
+{$ENDIF}
+{$DESIGNONLY}
+{$DESCRIPTION 'SkyLog - componentes Delphi 12 Athens'}
+{$R *.res}
+
+requires
+  rtl,
+  vcl,
+  designide,
+  SkyLogRuntime290;
+
+contains
+  SkyLog.Register in '..\..\source\SkyLog.Register.pas';
+
+end.

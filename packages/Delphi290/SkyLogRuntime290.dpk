@@ -1,0 +1,18 @@
+package SkyLogRuntime290;
+
+{$IFNDEF VER360}
+  {$MESSAGE FATAL 'Este pacote deve ser compilado com Delphi 12 Athens.'}
+{$ENDIF}
+{$RUNONLY}
+{$DESCRIPTION 'SkyLog - runtime Delphi 12 Athens'}
+{$R *.res}
+
+requires
+  rtl,
+  vcl,
+  FireDAC;
+
+contains
+  SkyLog in '..\..\source\SkyLog.pas';
+
+end.
