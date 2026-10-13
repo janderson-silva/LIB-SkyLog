@@ -29,34 +29,19 @@ Não é necessário alterar o DPR nem `Application.OnException`. Se você tratar
 
 Os projetos são separados por versão e compartilham o código em `source`:
 
-Pastas e projetos usam o **Package version**: `260` para Delphi 10.3 Rio e `370`
+Pastas e projetos usam o **Package version**: `260` para Delphi 10.3 Rio, `290` para Delphi 12 Athens e `370`
 para Delphi 13 Florence.
 
 | Delphi | Projeto de runtime | Projeto de design |
 | --- | --- | --- |
 | 10.3 Rio | `packages\Delphi260\SkyLogRuntime260.dproj` | `packages\Delphi260\SkyLogDesign260.dproj` |
+| 12 Athens | `packages\Delphi290\SkyLogRuntime290.dproj` | `packages\Delphi290\SkyLogDesign290.dproj` |
 | 13 Florence | `packages\Delphi370\SkyLogRuntime370.dproj` | `packages\Delphi370\SkyLogDesign370.dproj` |
 
-1. Abra o projeto de runtime da sua versão e execute **Build**, em **Release**.
-2. Abra o projeto de design correspondente e execute **Build** na mesma plataforma.
-3. Em **Component > Install Packages > Add**, selecione a BPL de design gerada em
-   `build\Delphi260\<plataforma>\Release` ou `build\Delphi370\<plataforma>\Release`.
-   Mantenha a BPL de runtime junto dela. A instalação direta da BPL foi confirmada
-   pelo usuário no Delphi 10.3 antes da renomeação, após uma AV no comando Install do projeto.
-4. Adicione `source` ao **Library path** das plataformas usadas pela aplicação.
-5. Na paleta **SkyLog**, coloque `TSkyLog` no formulário e configure `LogDirectory`.
-
-Use Win32 para o design do Delphi 10.3. No Delphi 13, use a arquitetura da IDE
-(Win32 ou Win64). O runtime pode ser compilado nas duas plataformas em ambas as versões.
-
-Não misture DCUs, DCPs ou BPLs de versões/arquiteturas diferentes. Ao atualizar uma
-instalação antiga, remova sua entrada antes de adicionar a nova BPL, evitando carregar
-simultaneamente dois pacotes que contenham `SkyLog`. Consulte as
-[instruções de migração e organização](packages/README.md), incluindo os novos
-nomes e caminhos de saída das duas versões.
-
-No Rio, o timer interno só é criado
-ao iniciar o monitoramento em execução; o comportamento do Delphi 13 é preservado.
+1. Adicione `source` ao **Library path** das plataformas usadas pela aplicação.
+2. Abra o projeto de runtime da sua versão e execute **Build**.
+3. Abra o projeto de design correspondente e execute **Build** e **Install**.
+4. Na paleta **SkyLog**, coloque `TSkyLog` no formulário e configure `LogDirectory`.
 
 ## Configuração
 
