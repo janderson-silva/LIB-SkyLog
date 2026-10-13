@@ -1,5 +1,16 @@
 # Histórico de validação — 2026-10-13
 
+## Alterações posteriores sem execução
+
+As alterações de gravação do formato 2 (identificação de aplicação/build,
+execução/correlação/registro, fuso horário, rotação, retenção e novos eventos de
+pilha/diagnósticos/limpeza) receberam somente revisão estática do código e da
+documentação. Por solicitação do usuário, não foram feitos build, compilação,
+execução de testes nem criação de exemplos. Os resultados históricos abaixo
+não validam essas alterações.
+
+## Validação histórica
+
 Este registro descreve a validação anterior à adoção dos sufixos de Package version
 `260`/`370`. Os nomes e comandos abaixo são históricos; scripts, exemplos e testes
 não fazem parte da estrutura atual. A renomeação para `Delphi260`/`Delphi370` e
