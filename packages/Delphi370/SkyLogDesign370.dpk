@@ -1,4 +1,4 @@
-package SkyLogDesign13;
+package SkyLogDesign370;
 
 {$IFNDEF VER370}
   {$MESSAGE FATAL 'Este pacote deve ser compilado com Delphi 13 Florence.'}
@@ -11,7 +11,7 @@ requires
   rtl,
   vcl,
   designide,
-  SkyLogRuntime13;
+  SkyLogRuntime370;
 
 contains
   SkyLog.Register in '..\..\source\SkyLog.Register.pas';

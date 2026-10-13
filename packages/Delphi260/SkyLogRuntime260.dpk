@@ -1,4 +1,4 @@
-package SkyLogRuntime103;
+package SkyLogRuntime260;
 
 {$IFNDEF VER330}
   {$MESSAGE FATAL 'Este pacote deve ser compilado com Delphi 10.3 Rio.'}

@@ -7,7 +7,7 @@ Arquivos diários: `yyyy-mm-dd.log`, texto UTF-8, data/hora local com milissegun
 ## Compatibilidade
 
 - Windows, VCL, Win32 e Win64.
-- Projetos disponíveis e validados para **Delphi 10.3 Rio (compilador 33.0)** e **Delphi 13 Florence (compilador 37.0)**, em Win32 e Win64. Outras versões serão adicionadas e validadas separadamente.
+- Componente validado para **Delphi 10.3 Rio (compilador 33.0)** e **Delphi 13 Florence (compilador 37.0)**, em Win32 e Win64. A renomeação dos pacotes para os sufixos `260`/`370` não foi recompilada; consulte o [histórico de validação](VALIDATION.md). Outras versões serão adicionadas e validadas separadamente.
 - No Delphi 13, permanece a implementação original com `TRttiInvokableType.CreateImplementation`. Antes do Delphi 13, a criação do interceptador usa `TRttiMethod.CreateImplementation`, disponível no Rio.
 - **No Delphi 10.3, o método atribuído ao evento precisa de RTTI estendida**. Os handlers publicados dos formulários (como os criados pela IDE) e métodos públicos com RTTI padrão são atendidos. Para handlers privados/protegidos personalizados, publique o método ou habilite a geração de RTTI para sua visibilidade. Sem essa informação, o evento fica intacto e aparece em `Diagnostics`; `Execute` e `LogException` continuam disponíveis. O `OnError` do FireDAC usa uma assinatura interna e funciona mesmo sem handler anterior ou sem RTTI no handler. O Delphi 13 mantém a captura baseada apenas na RTTI do tipo do evento.
 - FireDAC é uma dependência do pacote. A aplicação continua escolhendo seu driver: Firebird, InterBase, SQLite etc.
@@ -17,17 +17,20 @@ Arquivos diários: `yyyy-mm-dd.log`, texto UTF-8, data/hora local com milissegun
 
 Os projetos são separados por versão e compartilham o código em `source`:
 
+Pastas e projetos usam o **Package version**: `260` para Delphi 10.3 Rio e `370`
+para Delphi 13 Florence.
+
 | Delphi | Projeto de runtime | Projeto de design |
 | --- | --- | --- |
-| 10.3 Rio | `packages\Delphi103\SkyLogRuntime103.dproj` | `packages\Delphi103\SkyLogDesign103.dproj` |
-| 13 Florence | `packages\Delphi13\SkyLogRuntime13.dproj` | `packages\Delphi13\SkyLogDesign13.dproj` |
+| 10.3 Rio | `packages\Delphi260\SkyLogRuntime260.dproj` | `packages\Delphi260\SkyLogDesign260.dproj` |
+| 13 Florence | `packages\Delphi370\SkyLogRuntime370.dproj` | `packages\Delphi370\SkyLogDesign370.dproj` |
 
 1. Abra o projeto de runtime da sua versão e execute **Build**, em **Release**.
 2. Abra o projeto de design correspondente e execute **Build** na mesma plataforma.
 3. Em **Component > Install Packages > Add**, selecione a BPL de design gerada em
-   `build\Delphi103\<plataforma>\Release` ou `build\Delphi13\<plataforma>\Release`.
+   `build\Delphi260\<plataforma>\Release` ou `build\Delphi370\<plataforma>\Release`.
    Mantenha a BPL de runtime junto dela. A instalação direta da BPL foi confirmada
-   pelo usuário no Delphi 10.3, após uma AV no comando Install do projeto.
+   pelo usuário no Delphi 10.3 antes da renomeação, após uma AV no comando Install do projeto.
 4. Adicione `source` ao **Library path** das plataformas usadas pela aplicação.
 5. Na paleta **SkyLog**, coloque `TSkyLog` no formulário e configure `LogDirectory`.
 
@@ -38,9 +41,9 @@ Não misture DCUs, DCPs ou BPLs de versões/arquiteturas diferentes. Ao atualiza
 instalação antiga, remova sua entrada antes de adicionar a nova BPL, evitando carregar
 simultaneamente dois pacotes que contenham `SkyLog`. Consulte as
 [instruções de migração e organização](packages/README.md), incluindo os novos
-nomes `SkyLogRuntime13`/`SkyLogDesign13` e o novo caminho de saída do Rio.
+nomes e caminhos de saída das duas versões.
 
-O script não instala pacotes automaticamente. No Rio, o timer interno só é criado
+No Rio, o timer interno só é criado
 ao iniciar o monitoramento em execução; o comportamento do Delphi 13 é preservado.
 
 Propriedades principais:
@@ -153,54 +156,22 @@ Os eventos e `WindowProc` são restaurados ao desativar/destruir. Não mantenha 
 
 A gravação é síncrona, abre/acrescenta/fecha o arquivo por entrada e serializa os loggers dentro do mesmo processo. A pasta precisa permitir escrita. Se outra instância do programa bloquear o mesmo arquivo, a falha aparece em `LastWriteError`, `OnWriteError` e na saída de depuração; não substitui a exceção original. Para várias instâncias simultâneas, configure subpastas por instância. Não destrua o logger dentro de `OnWriteError`.
 
-## Compilar e testar
+## Arquivos de instalação
 
-Com os compiladores Delphi no PATH:
-
-```powershell
-.\scripts\build.ps1
-```
-
-Ou informe a instalação:
-
-```powershell
-.\scripts\build.ps1 -DelphiBin 'C:\Program Files (x86)\Embarcadero\Studio\37.0\bin'
-.\scripts\build.ps1 -Platform Win64
-```
-
-Para Delphi 10.3:
-
-```powershell
-.\scripts\build.ps1 -DelphiBin 'C:\Program Files (x86)\Embarcadero\Studio\20.0\bin'
-```
-
-O script identifica o compilador, seleciona `packages\Delphi103` ou `packages\Delphi13`
-e compila os `.dproj` com MSBuild. Uma versão sem projetos cadastrados é recusada.
-Executa os testes do componente, o teste de carregamento/registro das BPLs de design
-suportadas e a verificação do DFM/banco do demo. O design do Rio é somente Win32.
-Não instala nada na IDE.
-
-As saídas seguem o mesmo padrão na IDE e no script:
-
-- `build\Delphi103\<plataforma>\Release`: binários do Rio.
-- `build\Delphi13\<plataforma>\Release`: binários do Florence.
-- Em cada pasta: BPLs, DCPs, executáveis, DCUs, `logs` e `test-output-<PID>`.
-
-`-OutputRoot` altera a pasta-base; a versão, plataforma e configuração continuam
-sendo acrescentadas automaticamente. `-SkipTests` compila sem executar os testes.
-
-O demo usa SQLite em memória, com a biblioteca estática do Delphi. No Delphi 10.3, essa ligação já faz parte do driver; no Delphi 13, permanece a inclusão de `FireDAC.Phys.SQLiteWrapper.Stat`. Não precisa de Firebird instalado ou de dados de produção. Os testes verificam isolamento, conexão compartilhada, código nativo, UTF-8, parâmetros por referência, retorno, eventos aninhados, restauração, falha de gravação, componentes dinâmicos, ciclo de vida e handlers com/sem RTTI.
+Mantenha `source` e `packages`, preservando sua posição relativa. Abra os `.dproj`
+da versão desejada conforme as instruções de instalação acima.
+A pasta `build` contém saídas geradas e não precisa acompanhar os fontes:
+ao compilar os projetos, as saídas configuradas são criadas novamente.
+As pastas `examples`, `tests` e `scripts` não fazem parte da estrutura atual.
+Os resultados dos testes anteriores estão documentados em [VALIDATION.md](VALIDATION.md).
 
 ## Organização
 
 ```text
 source/SkyLog.pas             Componente e implementação
 source/SkyLog.Register.pas    Registro na paleta
-packages/Delphi103/          Projetos e instruções do Delphi 10.3
-packages/Delphi13/           Projetos e instruções do Delphi 13
-examples/                    Aplicativo VCL com DFM
-tests/                       Testes executáveis sem framework externo
-scripts/build.ps1            Compilação e execução dos testes
+packages/Delphi260/          Projetos do Delphi 10.3 Rio (Package version 260)
+packages/Delphi370/          Projetos do Delphi 13 Florence (Package version 370)
 ```
 
 Referências da Embarcadero: [callback de RTTI](https://docwiki.embarcadero.com/Libraries/Athens/en/System.Rtti.TMethodImplementationCallback), [OnError de datasets FireDAC](https://docwiki.embarcadero.com/Libraries/Athens/en/FireDAC.Comp.Client.TFDRdbmsDataSet.OnError), [OnError da conexão](https://docwiki.embarcadero.com/Libraries/Athens/en/FireDAC.Comp.Client.TFDCustomConnection.OnError).

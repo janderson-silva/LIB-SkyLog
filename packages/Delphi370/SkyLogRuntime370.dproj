@@ -3,7 +3,7 @@
     <ProjectGuid>{A7FCC0F8-D45B-441B-AECF-62DB71C42CF7}</ProjectGuid>
     <ProjectVersion>20.4</ProjectVersion>
     <FrameworkType>VCL</FrameworkType>
-    <MainSource>SkyLogRuntime13.dpk</MainSource>
+    <MainSource>SkyLogRuntime370.dpk</MainSource>
     <Base>True</Base>
     <Config Condition="'$(Config)'==''">Release</Config>
     <Platform Condition="'$(Platform)'==''">Win32</Platform>
@@ -12,15 +12,15 @@
     <GenDll>true</GenDll>
     <GenPackage>true</GenPackage>
     <RuntimeOnlyPackage>true</RuntimeOnlyPackage>
-    <SanitizedProjectName>SkyLogRuntime13</SanitizedProjectName>
+    <SanitizedProjectName>SkyLogRuntime370</SanitizedProjectName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
     <Base>true</Base>
     <DCC_Namespace>System;Winapi;Vcl;$(DCC_Namespace)</DCC_Namespace>
-    <DCC_DcuOutput>..\..\build\Delphi13\$(Platform)\$(Config)\SkyLogRuntime13</DCC_DcuOutput>
-    <DCC_BplOutput>..\..\build\Delphi13\$(Platform)\$(Config)</DCC_BplOutput>
-    <DCC_DcpOutput>..\..\build\Delphi13\$(Platform)\$(Config)</DCC_DcpOutput>
-    <DCC_UnitSearchPath>..\..\build\Delphi13\$(Platform)\$(Config);..\..\source;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+    <DCC_DcuOutput>..\..\build\Delphi370\$(Platform)\$(Config)\SkyLogRuntime370</DCC_DcuOutput>
+    <DCC_BplOutput>..\..\build\Delphi370\$(Platform)\$(Config)</DCC_BplOutput>
+    <DCC_DcpOutput>..\..\build\Delphi370\$(Platform)\$(Config)</DCC_DcpOutput>
+    <DCC_UnitSearchPath>..\..\build\Delphi370\$(Platform)\$(Config);..\..\source;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
     <DCC_CBuilderOutput>None</DCC_CBuilderOutput>
     <DCC_HppOutput>$(DCC_DcuOutput)</DCC_HppOutput>
     <DCC_ObjOutput>$(DCC_DcuOutput)</DCC_ObjOutput>
@@ -29,7 +29,7 @@
     <DelphiHPPOutputPath>$(DCC_DcuOutput)</DelphiHPPOutputPath>
     <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
     <VerInfo_Locale>1033</VerInfo_Locale>
-    <VerInfo_Keys>FileDescription=SkyLog Delphi 13;FileVersion=1.0.0.0;ProductName=SkyLog;ProductVersion=1.0.0.0;OriginalFilename=SkyLogRuntime13.bpl</VerInfo_Keys>
+    <VerInfo_Keys>FileDescription=SkyLog Delphi 13;FileVersion=1.0.0.0;ProductName=SkyLog;ProductVersion=1.0.0.0;OriginalFilename=SkyLogRuntime370.bpl</VerInfo_Keys>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Config)'=='Release' or '$(Cfg_1)'!=''">
     <Cfg_1>true</Cfg_1>
@@ -60,7 +60,7 @@
     <BorlandProject>
       <Delphi.Personality>
         <Source>
-          <Source Name="MainSource">SkyLogRuntime13.dpk</Source>
+          <Source Name="MainSource">SkyLogRuntime370.dpk</Source>
         </Source>
       </Delphi.Personality>
       <Platforms>

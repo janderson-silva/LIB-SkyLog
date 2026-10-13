@@ -1,4 +1,4 @@
-package SkyLogRuntime13;
+package SkyLogRuntime370;
 
 {$IFNDEF VER370}
   {$MESSAGE FATAL 'Este pacote deve ser compilado com Delphi 13 Florence.'}

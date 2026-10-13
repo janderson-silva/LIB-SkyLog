@@ -1,4 +1,10 @@
-# Validação — 2026-10-13
+# Histórico de validação — 2026-10-13
+
+Este registro descreve a validação anterior à adoção dos sufixos de Package version
+`260`/`370`. Os nomes e comandos abaixo são históricos; scripts, exemplos e testes
+não fazem parte da estrutura atual. A renomeação para `Delphi260`/`Delphi370` e
+`SkyLogRuntime260`/`SkyLogDesign260`/`SkyLogRuntime370`/`SkyLogDesign370` não inclui
+nova compilação, execução de testes ou instalação na IDE.
 
 Ambiente: Windows, Delphi 10.3 Rio (dcc32/dcc64 33.0) e Delphi 13 Florence
 (dcc32/dcc64 37.0). Validação após a organização dos projetos por versão.

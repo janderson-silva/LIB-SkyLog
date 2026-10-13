@@ -5,10 +5,15 @@ de saída. Não existem mais projetos de compilação diretamente em `packages`.
 O componente é compartilhado em `source\SkyLog.pas`; diferenças de RTL são
 tratadas por compilação condicional nesse fonte, sem duplicar a implementação.
 
+As pastas e os projetos usam o **Package version** do Delphi: `260` para o
+Delphi 10.3 Rio e `370` para o Delphi 13 Florence. Esse número não é o
+`CompilerVersion`: o Rio continua usando o compilador 33.0 e a diretiva `VER330`;
+o Florence usa 37.0 e `VER370`.
+
 | Delphi | Pasta | Runtime | Design | Saída padrão |
 | --- | --- | --- | --- | --- |
-| 10.3 Rio | [Delphi103](Delphi103/README.md) | SkyLogRuntime103 | SkyLogDesign103 | `build\Delphi103\<plataforma>\Release` |
-| 13 Florence | [Delphi13](Delphi13/README.md) | SkyLogRuntime13 | SkyLogDesign13 | `build\Delphi13\<plataforma>\Release` |
+| 10.3 Rio | [Delphi260](Delphi260/README.md) | SkyLogRuntime260 | SkyLogDesign260 | `build\Delphi260\<plataforma>\Release` |
+| 13 Florence | [Delphi370](Delphi370/README.md) | SkyLogRuntime370 | SkyLogDesign370 | `build\Delphi370\<plataforma>\Release` |
 
 O runtime suporta Win32/Win64 nas duas versões. O design deve corresponder à
 arquitetura da IDE: Win32 no 10.3; Win32 ou Win64 no 13. Compile primeiro o runtime
@@ -20,12 +25,13 @@ Essa foi a forma de instalação confirmada pelo usuário no Delphi 10.3.
 
 ## Migração da organização anterior
 
-- Delphi 13: os projetos antes localizados na raiz de `packages` foram substituídos
-  por `Delphi13\SkyLogRuntime13.dproj` e `Delphi13\SkyLogDesign13.dproj`.
-  Atualize também a lista de runtime packages da aplicação se ela usava
-  explicitamente `SkyLogRuntime`; o novo nome é `SkyLogRuntime13`.
-- Delphi 10.3: os nomes `SkyLogRuntime103`/`SkyLogDesign103` foram mantidos.
-  A saída passou de `build\Delphi103IDE` para `build\Delphi103`.
+- Delphi 10.3: a pasta `Delphi103` passa a ser `Delphi260`; os pacotes
+  `SkyLogRuntime103`/`SkyLogDesign103` passam a `SkyLogRuntime260`/`SkyLogDesign260`.
+- Delphi 13: a pasta `Delphi13` passa a ser `Delphi370`; os pacotes
+  `SkyLogRuntime13`/`SkyLogDesign13` passam a `SkyLogRuntime370`/`SkyLogDesign370`.
+- As saídas passam a `build\Delphi260` e `build\Delphi370`, respectivamente.
+  Atualize a lista de runtime packages das aplicações que usem os nomes antigos
+  explicitamente, incluindo `SkyLogRuntime` sem sufixo, e recompile suas dependências.
 - Se houver um pacote antigo instalado, remova apenas sua entrada no gerenciador
   de pacotes da IDE antes de adicionar o novo caminho. Não carregue dois pacotes
   que contenham a mesma unit `SkyLog` na mesma IDE/aplicação.
@@ -34,8 +40,8 @@ Essa foi a forma de instalação confirmada pelo usuário no Delphi 10.3.
 
 ## Novas versões
 
-Ao adicionar suporte, crie `packages\Delphi<versão>` com projetos de GUIDs próprios,
+Ao adicionar suporte, crie `packages\Delphi<PackageVersion>` com projetos de GUIDs próprios,
 nomes de pacotes exclusivos, proteção contra o compilador incorreto e saídas em
-`build\Delphi<versão>\<plataforma>\<configuração>`. Aponte para o mesmo `source`.
-Cadastre o compilador em `scripts\build.ps1`, valide os testes e documente a
-instalação. Não acrescente uma versão à lista de suporte sem compilá-la e testá-la.
+`build\Delphi<PackageVersion>\<plataforma>\<configuração>`. Use o mesmo sufixo
+`<PackageVersion>` nos nomes dos pacotes e aponte para o mesmo `source`.
+Valide a compatibilidade e documente a instalação antes de anunciar suporte.

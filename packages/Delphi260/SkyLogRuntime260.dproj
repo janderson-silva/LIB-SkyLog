@@ -1,9 +1,9 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup>
-    <ProjectGuid>{3DFAC629-706E-43C1-A85C-30C5E6B0536A}</ProjectGuid>
-    <ProjectVersion>20.4</ProjectVersion>
+    <ProjectGuid>{2382273E-A35E-40F2-91A0-04616B63B086}</ProjectGuid>
+    <ProjectVersion>18.0</ProjectVersion>
     <FrameworkType>VCL</FrameworkType>
-    <MainSource>SkyLogDesign13.dpk</MainSource>
+    <MainSource>SkyLogRuntime260.dpk</MainSource>
     <Base>True</Base>
     <Config Condition="'$(Config)'==''">Release</Config>
     <Platform Condition="'$(Platform)'==''">Win32</Platform>
@@ -11,16 +11,16 @@
     <AppType>Package</AppType>
     <GenDll>true</GenDll>
     <GenPackage>true</GenPackage>
-    <DesignOnlyPackage>true</DesignOnlyPackage>
-    <SanitizedProjectName>SkyLogDesign13</SanitizedProjectName>
+    <RuntimeOnlyPackage>true</RuntimeOnlyPackage>
+    <SanitizedProjectName>SkyLogRuntime260</SanitizedProjectName>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
     <Base>true</Base>
     <DCC_Namespace>System;Winapi;Vcl;$(DCC_Namespace)</DCC_Namespace>
-    <DCC_DcuOutput>..\..\build\Delphi13\$(Platform)\$(Config)\SkyLogDesign13</DCC_DcuOutput>
-    <DCC_BplOutput>..\..\build\Delphi13\$(Platform)\$(Config)</DCC_BplOutput>
-    <DCC_DcpOutput>..\..\build\Delphi13\$(Platform)\$(Config)</DCC_DcpOutput>
-    <DCC_UnitSearchPath>..\..\build\Delphi13\$(Platform)\$(Config);..\..\source;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+    <DCC_DcuOutput>..\..\build\Delphi260\$(Platform)\$(Config)\SkyLogRuntime260</DCC_DcuOutput>
+    <DCC_BplOutput>..\..\build\Delphi260\$(Platform)\$(Config)</DCC_BplOutput>
+    <DCC_DcpOutput>..\..\build\Delphi260\$(Platform)\$(Config)</DCC_DcpOutput>
+    <DCC_UnitSearchPath>..\..\build\Delphi260\$(Platform)\$(Config);..\..\source;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
     <DCC_CBuilderOutput>None</DCC_CBuilderOutput>
     <DCC_HppOutput>$(DCC_DcuOutput)</DCC_HppOutput>
     <DCC_ObjOutput>$(DCC_DcuOutput)</DCC_ObjOutput>
@@ -29,7 +29,7 @@
     <DelphiHPPOutputPath>$(DCC_DcuOutput)</DelphiHPPOutputPath>
     <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
     <VerInfo_Locale>1033</VerInfo_Locale>
-    <VerInfo_Keys>FileDescription=SkyLog Delphi 13;FileVersion=1.0.0.0;ProductName=SkyLog;ProductVersion=1.0.0.0;OriginalFilename=SkyLogDesign13.bpl</VerInfo_Keys>
+    <VerInfo_Keys>FileDescription=SkyLog Delphi 10.3;FileVersion=1.0.0.0;ProductName=SkyLog;ProductVersion=1.0.0.0;OriginalFilename=SkyLogRuntime260.bpl</VerInfo_Keys>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Config)'=='Release' or '$(Cfg_1)'!=''">
     <Cfg_1>true</Cfg_1>
@@ -44,9 +44,8 @@
     </DelphiCompile>
     <DCCReference Include="rtl.dcp" />
     <DCCReference Include="vcl.dcp" />
-    <DCCReference Include="designide.dcp" />
-    <DCCReference Include="SkyLogRuntime13.dcp" />
-    <DCCReference Include="..\..\source\SkyLog.Register.pas" />
+    <DCCReference Include="FireDAC.dcp" />
+    <DCCReference Include="..\..\source\SkyLog.pas" />
     <BuildConfiguration Include="Release">
       <Key>Cfg_1</Key>
       <CfgParent>Base</CfgParent>
@@ -61,7 +60,7 @@
     <BorlandProject>
       <Delphi.Personality>
         <Source>
-          <Source Name="MainSource">SkyLogDesign13.dpk</Source>
+          <Source Name="MainSource">SkyLogRuntime260.dpk</Source>
         </Source>
       </Delphi.Personality>
       <Platforms>
