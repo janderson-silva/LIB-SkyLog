@@ -1,0 +1,67 @@
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <ProjectGuid>{2382273E-A35E-40F2-91A0-04616B63B086}</ProjectGuid>
+    <ProjectVersion>18.0</ProjectVersion>
+    <FrameworkType>VCL</FrameworkType>
+    <MainSource>SkyLogRuntime103.dpk</MainSource>
+    <Base>True</Base>
+    <Config Condition="'$(Config)'==''">Release</Config>
+    <Platform Condition="'$(Platform)'==''">Win32</Platform>
+    <TargetedPlatforms>1</TargetedPlatforms>
+    <AppType>Package</AppType>
+    <GenDll>true</GenDll>
+    <GenPackage>true</GenPackage>
+    <RuntimeOnlyPackage>true</RuntimeOnlyPackage>
+    <SanitizedProjectName>SkyLogRuntime103</SanitizedProjectName>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
+    <Base>true</Base>
+    <DCC_Namespace>System;Winapi;Vcl;$(DCC_Namespace)</DCC_Namespace>
+    <DCC_DcuOutput>..\..\build\Delphi103IDE\$(Platform)\$(Config)\SkyLogRuntime103</DCC_DcuOutput>
+    <DCC_BplOutput>..\..\build\Delphi103IDE\$(Platform)\$(Config)</DCC_BplOutput>
+    <DCC_DcpOutput>..\..\build\Delphi103IDE\$(Platform)\$(Config)</DCC_DcpOutput>
+    <DCC_UnitSearchPath>..\..\build\Delphi103IDE\$(Platform)\$(Config);..\..\source;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+    <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
+    <VerInfo_Locale>1033</VerInfo_Locale>
+    <VerInfo_Keys>FileDescription=SkyLog Delphi 10.3;FileVersion=1.0.0.0;ProductName=SkyLog;ProductVersion=1.0.0.0;OriginalFilename=SkyLogRuntime103.bpl</VerInfo_Keys>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Config)'=='Release' or '$(Cfg_1)'!=''">
+    <Cfg_1>true</Cfg_1>
+    <CfgParent>Base</CfgParent>
+    <Base>true</Base>
+    <DCC_DebugInformation>0</DCC_DebugInformation>
+    <DCC_LocalDebugSymbols>false</DCC_LocalDebugSymbols>
+  </PropertyGroup>
+  <ItemGroup>
+    <DelphiCompile Include="$(MainSource)">
+      <MainSource>MainSource</MainSource>
+    </DelphiCompile>
+    <DCCReference Include="rtl.dcp" />
+    <DCCReference Include="vcl.dcp" />
+    <DCCReference Include="FireDAC.dcp" />
+    <DCCReference Include="..\..\source\SkyLog.pas" />
+    <BuildConfiguration Include="Release">
+      <Key>Cfg_1</Key>
+      <CfgParent>Base</CfgParent>
+    </BuildConfiguration>
+    <BuildConfiguration Include="Base">
+      <Key>Base</Key>
+    </BuildConfiguration>
+  </ItemGroup>
+  <ProjectExtensions>
+    <Borland.Personality>Delphi.Personality.12</Borland.Personality>
+    <Borland.ProjectType>Package</Borland.ProjectType>
+    <BorlandProject>
+      <Delphi.Personality>
+        <Source>
+          <Source Name="MainSource">SkyLogRuntime103.dpk</Source>
+        </Source>
+      </Delphi.Personality>
+      <Platforms>
+        <Platform value="Win32">True</Platform>
+      </Platforms>
+    </BorlandProject>
+    <ProjectFileVersion>12</ProjectFileVersion>
+  </ProjectExtensions>
+  <Import Project="$(BDS)\Bin\CodeGear.Delphi.Targets"/>
+</Project>

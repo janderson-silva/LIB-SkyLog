@@ -1,0 +1,19 @@
+package SkyLogDesign103;
+
+{$IFNDEF VER330}
+  {$MESSAGE FATAL 'Este pacote deve ser compilado com Delphi 10.3 Rio.'}
+{$ENDIF}
+{$DESIGNONLY}
+{$DESCRIPTION 'SkyLog - componentes Delphi 10.3 Rio'}
+{$R *.res}
+
+requires
+  rtl,
+  vcl,
+  designide,
+  SkyLogRuntime103;
+
+contains
+  SkyLogReg103 in 'SkyLogReg103.pas';
+
+end.

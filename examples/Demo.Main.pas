@@ -6,7 +6,10 @@ uses
   Winapi.Windows, System.SysUtils, System.Classes, Vcl.Forms, Vcl.Controls,
   Vcl.StdCtrls, FireDAC.Comp.Client, FireDAC.Stan.Intf, FireDAC.Stan.Def,
   FireDAC.Stan.Async, FireDAC.DApt, FireDAC.Phys.SQLite,
-  FireDAC.Phys.SQLiteWrapper.Stat, FireDAC.VCLUI.Wait, SkyLog;
+{$IF CompilerVersion >= 37.0}
+  FireDAC.Phys.SQLiteWrapper.Stat,
+{$IFEND}
+  FireDAC.VCLUI.Wait, SkyLog;
 
 type
   TfrmPrincipal = class(TForm)

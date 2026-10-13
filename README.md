@@ -7,12 +7,17 @@ Arquivos diários: `yyyy-mm-dd.log`, texto UTF-8, data/hora local com milissegun
 ## Compatibilidade
 
 - Windows, VCL, Win32 e Win64.
-- **Delphi 13 Florence ou superior**, usando `TRttiInvokableType.CreateImplementation`.
-- **Compilado e executado com Delphi 13 Florence, compilador 37.0**, disponível nesta máquina. Versões anteriores exigem adaptação e validação da API de RTTI e estão bloqueadas explicitamente pelo código.
+- **Delphi 10.3 Rio ou superior**. Compilado e executado com **Delphi 10.3 (compilador 33.0)** e **Delphi 13 Florence (compilador 37.0)**, em Win32 e Win64. Versões intermediárias não foram testadas.
+- No Delphi 13, permanece a implementação original com `TRttiInvokableType.CreateImplementation`. Antes do Delphi 13, a criação do interceptador usa `TRttiMethod.CreateImplementation`, disponível no Rio.
+- **No Delphi 10.3, o método atribuído ao evento precisa de RTTI estendida**. Os handlers publicados dos formulários (como os criados pela IDE) e métodos públicos com RTTI padrão são atendidos. Para handlers privados/protegidos personalizados, publique o método ou habilite a geração de RTTI para sua visibilidade. Sem essa informação, o evento fica intacto e aparece em `Diagnostics`; `Execute` e `LogException` continuam disponíveis. O `OnError` do FireDAC usa uma assinatura interna e funciona mesmo sem handler anterior ou sem RTTI no handler. O Delphi 13 mantém a captura baseada apenas na RTTI do tipo do evento.
 - FireDAC é uma dependência do pacote. A aplicação continua escolhendo seu driver: Firebird, InterBase, SQLite etc.
 - Não é um componente FMX nem compatível com Delphi 7/XE nesta implementação.
 
 ## Instalação na paleta
+
+**No Delphi 10.3**, use os projetos específicos em [`packages/Delphi103`](packages/Delphi103/README.md): abra `SkyLogRuntime103.dproj` e execute **Build**; depois abra `SkyLogDesign103.dproj` e execute **Build / Install**, em **Release / Win32**. Esses projetos têm configurações próprias do Rio e nomes de BPL separados. Após uma violação de acesso, reinicie a IDE antes de tentar novamente. Não reutilize nesse procedimento um `.dproj` gerado pelo Delphi 13.
+
+**No Delphi 13**, mantenha o procedimento existente:
 
 1. Abra `packages\SkyLogRuntime.dpk` no Delphi e compile.
 2. Abra `packages\SkyLogDesign.dpk` e escolha **Install**. O pacote de design precisa encontrar o DCP e a BPL do runtime. Compile os dois para a arquitetura da sua IDE; não confunda isso com a arquitetura do aplicativo.
@@ -20,7 +25,11 @@ Arquivos diários: `yyyy-mm-dd.log`, texto UTF-8, data/hora local com milissegun
 4. Na paleta **SkyLog**, coloque `TSkyLog` no formulário.
 5. Configure `LogDirectory`, por exemplo `C:\MeuSistema\Logs`.
 
-A instalação não foi executada automaticamente na sua IDE. Os pacotes de runtime e design já foram compilados nas duas arquiteturas em `build`.
+**Delphi 10.3:** a IDE é de 32 bits, mas aplicações podem usar o runtime em Win32 ou Win64. Recompile os pacotes na versão de destino: não reutilize DCUs, DCPs ou BPLs do Delphi 13 no Delphi 10.3 (nem o inverso). Configure pastas de saída separadas por versão. Não instale simultaneamente `SkyLogDesign` e `SkyLogDesign103` na mesma IDE, pois ambos registram o mesmo componente.
+
+A instalação não foi executada automaticamente na sua IDE. Os pacotes compilados do Delphi 13 estão em `build\Win32` e `build\Win64`; os do Delphi 10.3 estão em `build\Delphi10.3\Win32` (runtime/design) e `build\Delphi10.3\Win64` (runtime).
+
+Os novos projetos de instalação `SkyLogRuntime103`/`SkyLogDesign103` geram suas BPLs em `build\Delphi103IDE\Win32\Release`. No Rio, o timer interno só é criado ao iniciar o monitoramento em execução, evitando criar janelas durante o carregamento da BPL na IDE.
 
 Propriedades principais:
 
@@ -147,14 +156,20 @@ Ou informe a instalação:
 .\scripts\build.ps1 -Platform Win64
 ```
 
-O script compila os dois pacotes, os testes e o aplicativo de exemplo. Executa os testes e a verificação do DFM/banco do demo. Não instala nada na IDE. Saídas:
+Para Delphi 10.3, mantendo os binários separados dos gerados pelo Delphi 13:
+
+```powershell
+.\scripts\build.ps1 -DelphiBin 'C:\Program Files (x86)\Embarcadero\Studio\20.0\bin' -OutputRoot 'build\Delphi10.3'
+```
+
+O script compila os pacotes, os testes e o aplicativo de exemplo. O pacote de design Win64 é omitido quando essa instalação não oferece `designide.dcp` para Win64, como no Delphi 10.3. Executa os testes e a verificação do DFM/banco do demo. Não instala nada na IDE. Saídas padrão (ou sob a pasta indicada por `-OutputRoot`):
 
 - `build\Win32` e `build\Win64`: BPLs, DCPs, executáveis e DCUs.
 - `build\<plataforma>\SkyLogDemo.exe`: demonstração com erro de botão, chave duplicada e outro formulário sem captura.
 - `build\<plataforma>\test-output-<PID>`: logs produzidos pelos testes.
 - `build\<plataforma>\logs`: logs do demo.
 
-O demo usa SQLite em memória, com a biblioteca estática do Delphi. Não precisa de Firebird instalado ou de dados de produção. Os testes verificam isolamento, conexão compartilhada, código nativo, UTF-8, parâmetros por referência, retorno, eventos aninhados, restauração, falha de gravação, componentes dinâmicos e ciclo de vida.
+O demo usa SQLite em memória, com a biblioteca estática do Delphi. No Delphi 10.3, essa ligação já faz parte do driver; no Delphi 13, permanece a inclusão de `FireDAC.Phys.SQLiteWrapper.Stat`. Não precisa de Firebird instalado ou de dados de produção. Os testes verificam isolamento, conexão compartilhada, código nativo, UTF-8, parâmetros por referência, retorno, eventos aninhados, restauração, falha de gravação, componentes dinâmicos, ciclo de vida e handlers com/sem RTTI.
 
 ## Organização
 

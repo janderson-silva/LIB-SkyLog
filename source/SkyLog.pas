@@ -2,8 +2,8 @@ unit SkyLog;
 
 interface
 
-{$IF CompilerVersion < 37.0}
-  {$MESSAGE FATAL 'Esta versao do SkyLog requer Delphi 13 Florence ou superior.'}
+{$IF CompilerVersion < 33.0}
+  {$MESSAGE FATAL 'Esta versao do SkyLog requer Delphi 10.3 Rio ou superior.'}
 {$IFEND}
 
 uses
@@ -91,6 +91,11 @@ type
     IsFireDAC: Boolean;
     procedure Invoke(UserData: Pointer; const Args: TArray<TValue>;
       out Result: TValue);
+{$IF CompilerVersion < 37.0}
+    function LegacyEventMethod: TRttiMethod;
+  published
+    procedure LegacyFireDACError(ASender, AInitiator: TObject; var E: Exception);
+{$IFEND}
   public
     constructor CreateEvent(ALogger: TSkyLog; ATarget: TComponent;
       AProp: PPropInfo; AType: TRttiMethodType);
@@ -248,6 +253,56 @@ begin
   // clears Logger if it is destroyed before this callback returns.
 end;
 
+{$IF CompilerVersion < 37.0}
+procedure TSkyEventHook.LegacyFireDACError(ASender, AInitiator: TObject;
+  var E: Exception);
+begin
+  // Signature source for a FireDAC event that has no original handler.
+  // Only its RTTI is used; this method is never called.
+end;
+
+function TSkyEventHook.LegacyEventMethod: TRttiMethod;
+var
+  Candidate: TRttiMethod;
+  Parameters, Expected: TArray<TRttiParameter>;
+  I: Integer;
+  Matches: Boolean;
+begin
+  // Rio exposes CreateImplementation on TRttiMethod, not TRttiMethodType.
+  // Use the handler's published/extended RTTI and let the RTL marshal the
+  // platform ABI. The RTTI context owns the signature and invocation metadata.
+  if IsFireDAC then
+    Exit(RttiContext.GetType(TSkyEventHook).GetMethod('LegacyFireDACError'));
+
+  if (Original.Code <> nil) and (Original.Data <> nil) then
+  begin
+    Expected := MethodType.GetParameters;
+    for Candidate in RttiContext.GetType(TObject(Original.Data).ClassType).GetMethods do
+      if (Candidate.CodeAddress = Original.Code) and Candidate.HasExtendedInfo and
+        not Candidate.IsStatic and not Candidate.IsClassMethod and
+        (Candidate.CallingConvention = MethodType.CallingConvention) and
+        (Candidate.ReturnType = MethodType.ReturnType) then
+      begin
+        Parameters := Candidate.GetParameters;
+        Matches := Length(Parameters) = Length(Expected);
+        if Matches then
+          for I := 0 to High(Parameters) do
+            if (Parameters[I].ParamType <> Expected[I].ParamType) or
+              (Parameters[I].Flags <> Expected[I].Flags) then
+            begin
+              Matches := False;
+              Break;
+            end;
+        if Matches then
+          Exit(Candidate);
+      end;
+  end;
+  raise ENotSupportedException.Create(
+    'Esta versao do Delphi requer RTTI estendida no metodo do evento. ' +
+    'Publique o handler ou habilite RTTI para a visibilidade do metodo.');
+end;
+{$IFEND}
+
 constructor TSkyEventHook.CreateEvent(ALogger: TSkyLog;
   ATarget: TComponent; AProp: PPropInfo; AType: TRttiMethodType);
 var
@@ -273,7 +328,11 @@ begin
       HandlerName := '0x' + IntToHex(NativeUInt(Original.Code), SizeOf(Pointer) * 2);
     HandlerName := TObject(Original.Data).ClassName + '.' + HandlerName;
   end;
+{$IF CompilerVersion >= 37.0}
   Impl := MethodType.CreateImplementation(nil,
+{$ELSE}
+  Impl := LegacyEventMethod.CreateImplementation(nil,
+{$IFEND}
     procedure(UserData: Pointer; const Args: TArray<TValue>; out Result: TValue)
     begin
       Invoke(UserData, Args, Result);
@@ -501,6 +560,12 @@ begin
     if (Owner.Components[I] is TSkyLog) and (Owner.Components[I] <> Self) and
       TSkyLog(Owner.Components[I]).Enabled then
       raise EInvalidOperation.Create('Use apenas um SkyLog ativo por formulario.');
+{$IF CompilerVersion < 37.0}
+  // Loading the package in the Rio IDE must not create a timer/window.
+  // Start retirement only when a form is actually monitored at runtime.
+  if Retirement = nil then
+    Retirement := TSkyRetirement.Create;
+{$IFEND}
   AttachTree(MonitoredForm);
 end;
 
@@ -695,7 +760,9 @@ end;
 initialization
   RttiContext := TRttiContext.Create;
   FileLock := TObject.Create;
+{$IF CompilerVersion >= 37.0}
   Retirement := TSkyRetirement.Create;
+{$IFEND}
 
 finalization
   Retirement.Free;

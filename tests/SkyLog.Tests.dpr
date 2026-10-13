@@ -6,7 +6,10 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Classes,
   System.IOUtils, Vcl.Forms, Vcl.StdCtrls, Vcl.Controls, FireDAC.Stan.Error,
   FireDAC.Stan.Intf, FireDAC.Comp.Client, FireDAC.DApt, FireDAC.Stan.Def,
-  FireDAC.Stan.Async, FireDAC.Phys.SQLite, FireDAC.Phys.SQLiteWrapper.Stat,
+  FireDAC.Stan.Async, FireDAC.Phys.SQLite,
+{$IF CompilerVersion >= 37.0}
+  FireDAC.Phys.SQLiteWrapper.Stat,
+{$IFEND}
   SkyLog in '..\source\SkyLog.pas';
 
 type
@@ -24,6 +27,8 @@ type
   end;
 
   TProbeForm = class(TForm)
+  private
+    procedure PrivateFail(Sender: TObject);
   published
     procedure Fail(Sender: TObject);
     procedure ChangeKey(Sender: TObject; var Key: Char);
@@ -36,6 +41,7 @@ type
     Logger: TSkyLog;
     FDCalled: Boolean;
     InnerButton: TButton;
+    procedure PublicFail(Sender: TObject);
   end;
 
 var
@@ -72,6 +78,16 @@ end;
 procedure TProbeForm.Fail(Sender: TObject);
 begin
   raise EInvalidOperation.Create('Falha de teste: acentuacao ' + #$E7 + #$E3);
+end;
+
+procedure TProbeForm.PrivateFail(Sender: TObject);
+begin
+  raise EInvalidOperation.Create('handler privado sem RTTI');
+end;
+
+procedure TProbeForm.PublicFail(Sender: TObject);
+begin
+  raise EInvalidOperation.Create('handler publico com RTTI');
 end;
 
 procedure TProbeForm.ChangeKey(Sender: TObject; var Key: Char);
@@ -307,6 +323,34 @@ begin
     A.Logger.Refresh;
     try ButtonA.Click; except on E: Exception do ; end;
     Check(ReadLog.Contains('falha apos Refresh dentro do evento'), 'Refresh dentro do evento preserva captura em andamento');
+
+    ButtonA.OnClick := A.PublicFail;
+    A.Logger.Refresh;
+    Check(A.Logger.Diagnostics.Count = 0, 'handler publico com RTTI aceito');
+    try ButtonA.Click; except on E: EInvalidOperation do ; end;
+    Check(ReadLog.Contains('handler publico com RTTI'), 'handler publico capturado');
+
+    ButtonA.OnClick := A.PrivateFail;
+    A.Logger.Refresh;
+{$IF CompilerVersion < 37.0}
+    Check((A.Logger.Diagnostics.Count = 1) and
+      A.Logger.Diagnostics.Text.Contains('RTTI estendida'), 'handler sem RTTI diagnosticado no compilador antigo');
+{$ELSE}
+    Check(A.Logger.Diagnostics.Count = 0, 'Delphi 13 continua aceitando handler sem RTTI');
+{$IFEND}
+    Before := ReadLog;
+    try
+      ButtonA.Click;
+      Check(False, 'handler privado preserva excecao original');
+    except
+      on E: EInvalidOperation do
+        Check(E.Message = 'handler privado sem RTTI', 'handler privado preserva excecao original');
+    end;
+{$IF CompilerVersion < 37.0}
+    Check(ReadLog = Before, 'handler sem RTTI permanece intacto no compilador antigo');
+{$ELSE}
+    Check(ReadLog.Contains('handler privado sem RTTI'), 'Delphi 13 preserva captura sem RTTI do handler');
+{$IFEND}
 
     ButtonA.OnClick := A.FreeLogger;
     A.Logger.Refresh;
