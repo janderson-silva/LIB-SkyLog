@@ -1,44 +1,29 @@
-# Instalação no Delphi 10.3 Rio
+# Delphi 10.3 Rio
 
-Estes projetos são exclusivos do Delphi 10.3 e da instalação Win32. Usam o mesmo
-`source\SkyLog.pas` do restante da biblioteca. Os pacotes do Delphi 13 permanecem
-em `packages\SkyLogRuntime.dpk` e `packages\SkyLogDesign.dpk`.
+Projetos exclusivos do compilador 33.0, compartilhando `source\SkyLog.pas`.
+O runtime suporta Win32/Win64; o pacote de design é somente Win32.
 
-1. Feche a IDE após uma violação de acesso e abra novamente o Delphi 10.3.
-2. Se houver um **SkyLog** antigo instalado nessa IDE, remova somente sua entrada
-   em **Component > Install Packages** antes de instalar os novos pacotes.
-3. Abra **SkyLogRuntime103.dproj**, selecione **Release / Win32** e use **Build**.
-4. Abra **SkyLogDesign103.dproj**, selecione **Release / Win32**, use **Build**
-   e depois **Install**.
-5. Adicione a pasta `source` desta cópia da biblioteca ao Library Path do 10.3.
-   Evite manter outra cópia de `SkyLog.pas` no mesmo caminho de pesquisa.
+1. Abra `SkyLogRuntime103.dproj` e execute **Build** em **Release / Win32**.
+2. Abra `SkyLogDesign103.dproj` e execute **Build** em **Release / Win32**.
+3. Em **Component > Install Packages > Add**, selecione `SkyLogDesign103.bpl` de
+   `build\Delphi103\Win32\Release`. A instalação direta da BPL foi confirmada
+   pelo usuário; o comando Install do projeto apresentou AV nessa IDE.
+4. Mantenha `SkyLogRuntime103.bpl` junto da BPL de design e adicione `source` ao
+   Library Path da plataforma usada pela aplicação.
 
-Abra os `.dproj` desta pasta. Abrir o `.dpk` antigo ao lado de um `.dproj` criado
-pelo Delphi 13 pode reutilizar as configurações desse projeto mais novo.
-Não copie os `.dproj`/`.dproj.local` da instalação do Delphi 13 para esta pasta.
+Abra os `.dproj` desta pasta, sem copiar configurações do Delphi 13 para ela.
+Após uma AV, reinicie a IDE antes de uma nova tentativa.
 
-As BPLs e os DCPs ficam em `build\Delphi103IDE\Win32\Release`, na raiz da
-biblioteca. Mantenha `SkyLogRuntime103.bpl` acessível à IDE junto do pacote de
-design. Os nomes com `103` impedem a seleção de uma BPL homônima do Delphi 13.
-Não instale simultaneamente os pacotes antigo e novo: ambos contêm `SkyLog`.
+Na raiz da biblioteca:
 
-O MSBuild gera os recursos `.res` automaticamente a partir dos `.dproj`.
-Para compilar fora da IDE, em um **RAD Studio 10.3 Command Prompt**, na raiz:
-
-```bat
-msbuild packages\Delphi103\SkyLogRuntime103.dproj /t:Build /p:Config=Release /p:Platform=Win32
-msbuild packages\Delphi103\SkyLogDesign103.dproj /t:Build /p:Config=Release /p:Platform=Win32
+```powershell
+.\scripts\build.ps1 -DelphiBin 'C:\Program Files (x86)\Embarcadero\Studio\20.0\bin'
 ```
 
-Esses comandos compilam, mas não instalam o componente na IDE. O script geral
-`scripts\build.ps1` continua disponível para os testes de execução Win32/Win64.
+O script compila os mesmos projetos da IDE, gera os recursos `.res`, executa os
+40 testes em Win32/Win64 e o teste de carregamento/registro em Win32. Não instala
+BPLs. As saídas são separadas automaticamente das do Delphi 13.
 
-Teste adicional de carregamento/registro, no mesmo prompt e na raiz da biblioteca:
-
-```bat
-dcc32 -B -Q "-LUrtl;vcl;FireDAC" -Ebuild\Delphi103IDE\Win32\Release -N0build\Delphi103IDE\Win32\Release tests\SkyLog.PackageTests.dpr
-build\Delphi103IDE\Win32\Release\SkyLog.PackageTests.exe build\Delphi103IDE\Win32\Release\SkyLogRuntime103.bpl build\Delphi103IDE\Win32\Release\SkyLogDesign103.bpl
-```
-
-Esse teste chama o registro em um processo separado e não substitui a confirmação
-do comando Install dentro da IDE.
+Os nomes `SkyLogRuntime103`/`SkyLogDesign103` foram mantidos. A pasta de saída mudou
+para `build\Delphi103\<plataforma>\Release`. Atualize a entrada de instalação se
+ela ainda aponta para `build\Delphi103IDE`, seguindo a [migração](../README.md#migração-da-organização-anterior).

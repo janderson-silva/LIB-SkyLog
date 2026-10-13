@@ -1,0 +1,18 @@
+package SkyLogRuntime13;
+
+{$IFNDEF VER370}
+  {$MESSAGE FATAL 'Este pacote deve ser compilado com Delphi 13 Florence.'}
+{$ENDIF}
+{$RUNONLY}
+{$DESCRIPTION 'SkyLog - runtime Delphi 13 Florence'}
+{$R *.res}
+
+requires
+  rtl,
+  vcl,
+  FireDAC;
+
+contains
+  SkyLog in '..\..\source\SkyLog.pas';
+
+end.

@@ -17,10 +17,16 @@
   <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
     <Base>true</Base>
     <DCC_Namespace>System;Winapi;Vcl;$(DCC_Namespace)</DCC_Namespace>
-    <DCC_DcuOutput>..\..\build\Delphi103IDE\$(Platform)\$(Config)\SkyLogDesign103</DCC_DcuOutput>
-    <DCC_BplOutput>..\..\build\Delphi103IDE\$(Platform)\$(Config)</DCC_BplOutput>
-    <DCC_DcpOutput>..\..\build\Delphi103IDE\$(Platform)\$(Config)</DCC_DcpOutput>
-    <DCC_UnitSearchPath>..\..\build\Delphi103IDE\$(Platform)\$(Config);..\..\source;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+    <DCC_DcuOutput>..\..\build\Delphi103\$(Platform)\$(Config)\SkyLogDesign103</DCC_DcuOutput>
+    <DCC_BplOutput>..\..\build\Delphi103\$(Platform)\$(Config)</DCC_BplOutput>
+    <DCC_DcpOutput>..\..\build\Delphi103\$(Platform)\$(Config)</DCC_DcpOutput>
+    <DCC_UnitSearchPath>..\..\build\Delphi103\$(Platform)\$(Config);..\..\source;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+    <DCC_CBuilderOutput>None</DCC_CBuilderOutput>
+    <DCC_HppOutput>$(DCC_DcuOutput)</DCC_HppOutput>
+    <DCC_ObjOutput>$(DCC_DcuOutput)</DCC_ObjOutput>
+    <DCC_BpiOutput>$(DCC_DcpOutput)</DCC_BpiOutput>
+    <DCC_ResourceOutput>$(DCC_DcuOutput)</DCC_ResourceOutput>
+    <DelphiHPPOutputPath>$(DCC_DcuOutput)</DelphiHPPOutputPath>
     <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
     <VerInfo_Locale>1033</VerInfo_Locale>
     <VerInfo_Keys>FileDescription=SkyLog Delphi 10.3;FileVersion=1.0.0.0;ProductName=SkyLog;ProductVersion=1.0.0.0;OriginalFilename=SkyLogDesign103.bpl</VerInfo_Keys>

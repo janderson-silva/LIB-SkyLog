@@ -11,4 +11,4 @@ logs/
 *.stat
 __history/
 __recovery/
-packages/Delphi103/*.res
+packages/*/*.res
