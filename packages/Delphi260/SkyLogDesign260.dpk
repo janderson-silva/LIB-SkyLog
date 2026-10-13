@@ -14,6 +14,6 @@ requires
   SkyLogRuntime260;
 
 contains
-  SkyLogReg260 in 'SkyLogReg260.pas';
+  SkyLog.Register in '..\..\source\SkyLog.Register.pas';
 
 end.

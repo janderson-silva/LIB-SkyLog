@@ -46,7 +46,7 @@
     <DCCReference Include="vcl.dcp" />
     <DCCReference Include="designide.dcp" />
     <DCCReference Include="SkyLogRuntime260.dcp" />
-    <DCCReference Include="SkyLogReg260.pas" />
+    <DCCReference Include="..\..\source\SkyLog.Register.pas" />
     <BuildConfiguration Include="Release">
       <Key>Cfg_1</Key>
       <CfgParent>Base</CfgParent>

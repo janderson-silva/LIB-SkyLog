@@ -4,6 +4,8 @@ Cada versão tem seus próprios projetos `.dproj`/`.dpk`, nomes de pacotes e pas
 de saída. Não existem mais projetos de compilação diretamente em `packages`.
 O componente é compartilhado em `source\SkyLog.pas`; diferenças de RTL são
 tratadas por compilação condicional nesse fonte, sem duplicar a implementação.
+O registro na paleta também é compartilhado: ambos os pacotes de design usam
+`source\SkyLog.Register.pas`.
 
 As pastas e os projetos usam o **Package version** do Delphi: `260` para o
 Delphi 10.3 Rio e `370` para o Delphi 13 Florence. Esse número não é o
