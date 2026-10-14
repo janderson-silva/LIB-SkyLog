@@ -7,7 +7,11 @@ uses
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, FireDAC.Comp.UI, SkyLog,
   FireDAC.UI.Intf, FireDAC.VCLUI.Wait, FireDAC.Stan.Intf,   Winapi.ShellAPI, System.IOUtils, FireDAC.Comp.Client,
   FireDAC.Stan.Def, FireDAC.Stan.Async, FireDAC.DApt,
-  FireDAC.Phys.SQLite, FireDAC.Phys.SQLiteWrapper.Stat;
+  FireDAC.Phys.SQLite
+{$IF CompilerVersion >= 36.0}
+  , FireDAC.Phys.SQLiteWrapper.Stat
+{$IFEND}
+  ;
 
 type
   TfrmPrincipal = class(TForm)

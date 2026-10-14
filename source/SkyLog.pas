@@ -1492,6 +1492,8 @@ begin
 end;
 
 initialization
+  GroupDescendentsWith(TSkyLog, Vcl.Controls.TControl);
+  RegisterClass(TSkyLog);
   RttiContext := TRttiContext.Create;
   FileLock := TObject.Create;
   FileParts := TDictionary<string, Integer>.Create;
@@ -1501,6 +1503,7 @@ initialization
 {$IFEND}
 
 finalization
+  UnRegisterClass(TSkyLog);
   Retirement.Free;
   CleanupDates.Free;
   FileParts.Free;

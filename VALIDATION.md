@@ -1,5 +1,28 @@
 # Validação — 2026-10-14
 
+## Correção posterior: registro na IDE e abertura da demo
+
+Após o relato de `Class TSkyLog not found` no Delphi 10.3, foram ajustados o
+registro explícito da classe para streaming, sua associação à VCL e o carregamento
+do pacote de design. A demo passou a incluir o fonte por caminho relativo, sem
+fixar `SkyLogRuntime290`, e usa SQLite estático apenas a partir do Delphi 12.
+
+Verificações executadas em Win32 com Delphi 10.3, 12 e 13:
+
+- Build de runtime e design e carregamento das BPLs em processo separado.
+- Resolução de `TSkyLog` por `GetClass`, associação ao grupo VCL e registro da paleta.
+- Solicitação de carregamento permanente do pacote de design.
+- Leitura de DFM em modo de design e remoção do registro ao descarregar o runtime.
+- Criação do formulário real `untPrincipal.dfm`, presença do componente e ausência
+  de diagnósticos nos hooks de eventos da demo.
+- Build do projeto `demo/DemoSkyLog.dproj`.
+
+Todas passaram. Os testes desta correção ficaram em diretório temporário; as
+pastas `build`, `scripts` e `tests` removidas pelo usuário não foram restauradas.
+Não foi executada reinstalação na IDE aberta: a confirmação visual da paleta
+depende de o usuário recarregar a BPL atualizada. A matriz funcional abaixo
+corresponde à execução anterior, não a uma repetição após esta correção.
+
 ## Resultado atual
 
 Foram compilados os pacotes atuais e executadas as suítes recuperadas/ampliadas
