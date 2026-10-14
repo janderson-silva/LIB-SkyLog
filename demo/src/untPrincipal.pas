@@ -4,12 +4,30 @@ interface
 
 uses
   Winapi.Windows, System.SysUtils, System.Classes, Vcl.Graphics,
-  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, SkyLog;
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls, FireDAC.Comp.UI, SkyLog,
+  FireDAC.UI.Intf, FireDAC.VCLUI.Wait, FireDAC.Stan.Intf,   Winapi.ShellAPI, System.IOUtils, FireDAC.Comp.Client,
+  FireDAC.Stan.Def, FireDAC.Stan.Async, FireDAC.DApt,
+  FireDAC.Phys.SQLite, FireDAC.Phys.SQLiteWrapper.Stat;
 
 type
   TfrmPrincipal = class(TForm)
     btnConversao: TButton;
     SkyLog1: TSkyLog;
+    FDGUIxWaitCursor1: TFDGUIxWaitCursor;
+    pagCenarios: TPageControl;
+    tabGerais: TTabSheet;
+    tabBanco: TTabSheet;
+    tabSensivel: TTabSheet;
+    lblBanco: TLabel;
+    lblSensivel: TLabel;
+    btnSQL: TButton;
+    btnTabela: TButton;
+    btnDuplicado: TButton;
+    btnObrigatorio: TButton;
+    btnBancoSensivel: TButton;
+    btnSensivelTexto: TButton;
+    btnSensivelJSON: TButton;
+    btnSensivelLiteral: TButton;
     pnlHeader: TPanel;
     lblTitle: TLabel;
     lblSubtitle: TLabel;
@@ -31,15 +49,22 @@ type
     procedure btnNegocioClick(Sender: TObject);
     procedure btnTratadoClick(Sender: TObject);
     procedure btnAbrirLogsClick(Sender: TObject);
+    procedure btnSQLClick(Sender: TObject);
+    procedure btnTabelaClick(Sender: TObject);
+    procedure btnDuplicadoClick(Sender: TObject);
+    procedure btnObrigatorioClick(Sender: TObject);
+    procedure btnBancoSensivelClick(Sender: TObject);
+    procedure btnSensivelTextoClick(Sender: TObject);
+    procedure btnSensivelJSONClick(Sender: TObject);
+    procedure btnSensivelLiteralClick(Sender: TObject);
+  private
+    procedure ExecutarErroBanco(const SQL: string);
   end;
 
 var
   frmPrincipal: TfrmPrincipal;
 
 implementation
-
-uses
-  Winapi.ShellAPI, System.IOUtils;
 
 {$R *.dfm}
 
@@ -113,6 +138,85 @@ begin
   if NativeInt(ShellExecute(Handle, 'open', PChar(Pasta), nil, nil,
     SW_SHOWNORMAL)) <= 32 then
     ShowMessage('Nao foi possivel abrir a pasta: ' + Pasta);
+end;
+
+
+procedure TfrmPrincipal.ExecutarErroBanco(const SQL: string);
+var
+  Conexao: TFDConnection;
+begin
+  // Banco isolado por clique: nenhum arquivo ou servidor e alterado.
+  Conexao := TFDConnection.Create(nil);
+  try
+    Conexao.LoginPrompt := False;
+    Conexao.Params.Values['DriverID'] := 'SQLite';
+    Conexao.Params.Values['Database'] := ':memory:';
+    Conexao.Connected := True;
+    Conexao.ExecSQL('CREATE TABLE clientes (id INTEGER PRIMARY KEY, nome TEXT NOT NULL)');
+    Conexao.ExecSQL('INSERT INTO clientes (id, nome) VALUES (1, ''Cliente Demo'')');
+    Conexao.ExecSQL(SQL);
+  finally
+    Conexao.Free;
+  end;
+end;
+
+procedure TfrmPrincipal.btnSQLClick(Sender: TObject);
+begin
+  ExecutarErroBanco('SELEC id FROM clientes');
+end;
+
+procedure TfrmPrincipal.btnTabelaClick(Sender: TObject);
+begin
+  ExecutarErroBanco('SELECT * FROM tabela_inexistente');
+end;
+
+procedure TfrmPrincipal.btnDuplicadoClick(Sender: TObject);
+begin
+  ExecutarErroBanco('INSERT INTO clientes (id, nome) VALUES (1, ''Duplicado'')');
+end;
+
+procedure TfrmPrincipal.btnObrigatorioClick(Sender: TObject);
+begin
+  ExecutarErroBanco('INSERT INTO clientes (id, nome) VALUES (2, NULL)');
+end;
+
+procedure TfrmPrincipal.btnBancoSensivelClick(Sender: TObject);
+var
+  Conexao: TFDConnection;
+begin
+  Conexao := TFDConnection.Create(nil);
+  try
+    Conexao.LoginPrompt := False;
+    Conexao.Params.Values['DriverID'] := 'SQLite';
+    Conexao.Params.Values['Database'] := ':memory:';
+    Conexao.Connected := True;
+    Conexao.ExecSQL('CREATE TABLE autenticacao (id INTEGER)');
+    // Trigger gera uma excecao real do driver com credenciais ficticias.
+    Conexao.ExecSQL('CREATE TRIGGER negar_acesso BEFORE INSERT ON autenticacao ' +
+      'BEGIN SELECT RAISE(ABORT, ''password=SenhaDemo!2026; token=token-demo-xyz''); END');
+    Conexao.ExecSQL('INSERT INTO autenticacao VALUES (1)');
+  finally
+    Conexao.Free;
+  end;
+end;
+
+procedure TfrmPrincipal.btnSensivelTextoClick(Sender: TObject);
+begin
+  raise Exception.Create('Dados FICTICIOS: senha=SenhaDemo!2026; ' +
+    'token=token-demo-xyz; cpf=000.000.000-00; card_number=4111111111111111; cvv=000');
+end;
+
+procedure TfrmPrincipal.btnSensivelJSONClick(Sender: TObject);
+begin
+  raise Exception.Create('{"cenario":"Dados ficticios","usuario":{"password":' +
+    '"SenhaDemo!2026","cpf":"000.000.000-00"},"token":"token-demo-xyz",' +
+    '"card_number":"4111111111111111","cvv":"000"}');
+end;
+
+procedure TfrmPrincipal.btnSensivelLiteralClick(Sender: TObject);
+begin
+  // Valores conhecidos tambem sao mascarados sem chave como senha= ou token=.
+  raise Exception.Create('Credencial ficticia recebida: segredo-literal-demo-2026');
 end;
 
 end.
