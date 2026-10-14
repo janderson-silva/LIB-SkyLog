@@ -22,9 +22,8 @@ Mantenha as pastas `source`, `packages` e `resources` na estrutura original. É 
 
 1. Em **Tools > Options > Language > Delphi > Library**, adicione o **caminho completo da pasta `source`** ao **Library path** de Win32 e, se usar, de Win64. Preserve os caminhos existentes.
 2. Abra o projeto **Runtime** da tabela e execute **Build**, em **Release**.
-3. Abra o projeto **Design** correspondente e execute **Build**, na mesma configuração e plataforma.
-4. Em **Component > Install Packages > Add**, selecione a `SkyLogDesignXXX.bpl` gerada em `build/DelphiXXX/<plataforma>/Release`. Mantenha a `SkyLogRuntimeXXX.bpl` junto dela.
-5. Na paleta **SkyLog**, coloque um `TSkyLog` no formulário ou DataModule.
+3. Abra o projeto **Design** correspondente e execute **Build** e depois **Install**, na mesma configuração e plataforma.
+4. Na paleta **SkyLog**, coloque um `TSkyLog` no formulário ou DataModule.
 
 Para instalar na IDE, use **Win32 no Delphi 10.3 e 12**. No Delphi 13, use Win32 ou Win64 conforme a arquitetura da IDE. Ao atualizar, remova a entrada do pacote antigo antes de instalar o novo.
 
