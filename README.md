@@ -72,7 +72,16 @@ registro em uma única linha física. `formulario` fica vazio para DataModules.
   Valores sem aspas são mascarados até o próximo delimitador ou fim da linha;
   isso pode ocultar texto adicional para não expor parte de um segredo.
 - CPF e CNPJ com pontuação são mascarados mesmo sem nome de campo.
-- `SensitiveValues` protege valores literais mesmo sem rótulo.
+- `SensitiveValues` protege valores literais mesmo sem rótulo, incluindo strings,
+  nomes de propriedades e valores escalares dentro de objetos/arrays JSON.
+  Quando um literal corresponde a todo ou parte de um número, booleano ou `null`,
+  o valor inteiro vira a string `"[REDACTED]"`, mantendo o JSON válido. A comparação
+  usa a representação textual do valor, sem equivalência numérica entre grafias.
+  Escalares sem correspondência preservam seu tipo original.
+- Valores literais sobrepostos são mascarados a partir do texto original,
+  independentemente da ordem em `SensitiveValues`. Trechos sobrepostos ou
+  adjacentes formam um único `[REDACTED]`; o marcador inserido não é reprocessado
+  pela substituição de literais.
 - A proteção abrange mensagens, contexto, metadados textuais, detalhes FireDAC,
   pilha e mensagens de diagnóstico/erro do logger, nos dois formatos.
 - Se o mascaramento falhar, o texto é substituído integralmente por `[REDACTED]`.
@@ -372,7 +381,27 @@ Na integração com a aplicação, atribua `OnWriteError` para perceber perda de
 
 Mantenha `source`, `packages` e `resources`, preservando sua posição relativa. Abra os `.dproj`
 da versão desejada conforme as instruções de instalação acima.
-Os resultados dos testes anteriores estão documentados em [VALIDATION.md](VALIDATION.md).
+Os resultados da validação atual estão documentados em [VALIDATION.md](VALIDATION.md).
+
+## Compilação e testes automatizados
+
+Execute no PowerShell, a partir da raiz do repositório:
+
+```powershell
+.\scripts\build.ps1 -DelphiBin 'C:\Program Files (x86)\Embarcadero\Studio\20.0\bin' -Platform All
+.\scripts\build.ps1 -DelphiBin 'C:\Program Files (x86)\Embarcadero\Studio\23.0\bin' -Platform All
+.\scripts\build.ps1 -DelphiBin 'C:\Program Files (x86)\Embarcadero\Studio\37.0\bin' -Platform All
+```
+
+Use o comando correspondente à instalação disponível. Sem `-DelphiBin`, o script
+usa o `dcc32.exe` do PATH. `-Platform` aceita `Win32`, `Win64` ou `All`.
+O script recompila os projetos de pacotes via MSBuild, executa as suítes e testa
+o carregamento/registro dos pacotes de design disponíveis. Qualquer falha encerra
+a execução com erro. `-SkipTests` compila sem executar.
+
+Logs, executáveis e dados de teste ficam em `build\Delphi<versão do pacote>\<plataforma>\Release`.
+Os testes usam pastas exclusivas e SQLite em memória. Não instalam pacotes na IDE.
+Detalhes da cobertura e dos pré-requisitos estão em [tests/README.md](tests/README.md).
 
 ## Organização
 
@@ -382,6 +411,8 @@ source/SkyLog.Register.pas    Registro na paleta
 packages/Delphi260/          Projetos do Delphi 10.3 Rio (Package version 260)
 packages/Delphi290/          Projetos do Delphi 12 Athens (Package version 290)
 packages/Delphi370/          Projetos do Delphi 13 Florence (Package version 370)
+scripts/build.ps1            Compilação e execução reproduzível dos testes
+tests/                      Regressões funcionais e validação dos pacotes
 ```
 
 Referências da Embarcadero: [callback de RTTI](https://docwiki.embarcadero.com/Libraries/Athens/en/System.Rtti.TMethodImplementationCallback), [OnError de datasets FireDAC](https://docwiki.embarcadero.com/Libraries/Athens/en/FireDAC.Comp.Client.TFDRdbmsDataSet.OnError), [OnError da conexão](https://docwiki.embarcadero.com/Libraries/Athens/en/FireDAC.Comp.Client.TFDCustomConnection.OnError).

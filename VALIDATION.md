@@ -1,19 +1,81 @@
-# Histórico de validação — 2026-10-13
+# Validação — 2026-10-14
 
-## Alterações posteriores sem execução
+## Resultado atual
 
-As alterações de gravação do formato 2 (identificação de aplicação/build,
-execução/correlação/registro, fuso horário, rotação, retenção e novos eventos de
-pilha/diagnósticos/limpeza) receberam somente revisão estática do código e da
-documentação. Por solicitação do usuário, não foram feitos build, compilação,
-execução de testes nem criação de exemplos. Os resultados históricos abaixo
-não validam essas alterações.
+Foram compilados os pacotes atuais e executadas as suítes recuperadas/ampliadas
+usando `scripts/build.ps1`, nas instalações locais do Delphi 10.3 Rio (20.0),
+12 Athens (23.0) e 13 Florence (37.0). Os testes exercitam o componente real e
+inspecionam os arquivos gravados; não usam uma reimplementação do mascaramento.
 
-## Validação histórica
+| Verificação | 10.3 Win32 | 10.3 Win64 | 12 Win32 | 12 Win64 | 13 Win32 | 13 Win64 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Pacote runtime, Release | OK | OK | OK | OK | OK | OK |
+| Pacote design, Release | OK | N/A | OK | N/A | OK | OK |
+| Suíte recuperada | 40/40 | 40/40 | 40/40 | 40/40 | 40/40 | 40/40 |
+| Novas regressões | 67/67 | 67/67 | 67/67 | 67/67 | 67/67 | 67/67 |
+| Carregamento/registro/descarregamento das BPLs | OK | N/A | OK | N/A | OK | OK |
+
+Total funcional: **642 verificações, zero falhas**, mais as verificações dos
+pacotes. N/A: estas instalações do Rio/Athens não oferecem pacote de design Win64.
+O teste de registro usa um processo separado; não instala nem altera a IDE.
+
+Antes da correção, os 36 casos de mascaramento foram executados no Delphi 13
+Win32: **18 falharam**. Após a correção, os mesmos 36 passam em toda a matriz.
+Na execução em Rio/Athens, a suíte também detectou que `TJSONNumber` herda de
+`TJSONString` nessas versões: números comuns estavam sendo convertidos em
+strings. O tratamento agora preserva os tipos de escalares sem correspondência
+e substitui integralmente escalares que contenham um literal sensível.
+
+### Cobertura adicionada
+
+- Literais numéricos em JSON, arrays e objetos aninhados; correspondência parcial;
+  proteção de chaves; booleanos/null; preservação dos demais tipos.
+- Segredos sobrepostos, ordens distintas, sobreposição consigo mesmo, valores
+  repetidos/vazios, comparação sensível a maiúsculas, marcador sem reprocessamento.
+- Campos sensíveis recursivos, texto entre aspas, CPF/CNPJ e desativação da
+  proteção, tanto em JSON Lines quanto em texto.
+- UTF-8, escape de quebras/aspas, uma linha física por registro, tipos do esquema,
+  padrões do construtor e carregamento de DFM antigo sem as novas propriedades.
+- Matriz de filtros de nível e `Enabled=False` para registro manual.
+- DataModules: eventos reais interceptados, origem manual, limites de propriedade,
+  contexto ordenado entre escopos e ausência de duplicação na propagação.
+- Identidade da exceção original preservada com filtro ativo e falha de gravação;
+  mascaramento de metadados/pilha/diagnósticos e recuperação após falha de escrita.
+- Rotação por tamanho, registro maior que o limite, limite desativado e troca de
+  formato sem misturar arquivos.
+- Retenção de `.jsonl`/`.log`, dia de fronteira, modificação recente, arquivos
+  alheios/subpastas preservados, arquivo bloqueado, callback com erro e frequência
+  máxima diária por política.
+- Propriedades novas e seus padrões acessíveis via RTTI no pacote de design.
+
+### Reprodução e evidências
+
+Os comandos estão no README e em `tests/README.md`. Cada execução preserva
+artefatos e evidências em `build/Delphi260`, `build/Delphi290` ou `build/Delphi370`,
+subpastas `<Win32|Win64>/Release`:
+
+- `build-Runtime.log`, `build-Design.log`: compilação dos `.dproj` com MSBuild.
+- `compile-SkyLog.Tests.log`, `run-SkyLog.Tests.log`: suíte recuperada.
+- `compile-SkyLog.Features.log`, `run-SkyLog.Features.log`: novas regressões.
+- `compile-packages.log`, `run-packages.log`: teste de carregamento e registro,
+  quando houver pacote de design disponível para a arquitetura.
+- `tests/test-output-*` e `tests/features-*`: arquivos gerados pelos testes.
+
+Essas saídas são ignoradas pelo Git. O compilador ainda emite o aviso já existente
+W1002 referente a `TSearchRec.FindData`, API específica de Windows usada na retenção.
+
+### Limites desta execução
+
+Não foram testados instalação interativa na IDE, todas as telas da demo,
+Firebird em servidor real, FMX, concorrência em workers nem falhas de energia.
+Não há promessa de cobertura exaustiva para todos os formatos de dados sensíveis.
+A captura continua restrita à thread principal, conforme o README.
+
+## Validação histórica — 2026-10-13
 
 Este registro descreve a validação anterior à adoção dos sufixos de Package version
-`260`/`370`. Os nomes e comandos abaixo são históricos; scripts, exemplos e testes
-não fazem parte da estrutura atual. A renomeação para `Delphi260`/`Delphi370` e
+`260`/`370`. Os nomes e comandos abaixo são históricos; os scripts e testes atuais
+foram recuperados e adaptados na execução de 2026-10-14. A renomeação original para `Delphi260`/`Delphi370` e
 `SkyLogRuntime260`/`SkyLogDesign260`/`SkyLogRuntime370`/`SkyLogDesign370` não inclui
 nova compilação, execução de testes ou instalação na IDE.
 

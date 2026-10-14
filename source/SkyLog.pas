@@ -108,6 +108,7 @@ implementation
 
 uses
   System.IOUtils, System.DateUtils, System.Hash, System.JSON, System.RegularExpressions,
+  System.StrUtils,
   FireDAC.Stan.Error, FireDAC.Comp.Client;
 
 type
@@ -968,6 +969,59 @@ var
   I, J: Integer;
   Structured, Sanitized: TJSONValue;
 
+  function MaskLiterals(const Text: string): string;
+  var
+    Covered: TArray<Boolean>;
+    Secret: string;
+    K, Position, Last, Offset, Start: Integer;
+    Builder: TStringBuilder;
+  begin
+    Result := Text;
+    // Find every occurrence in the ORIGINAL text, including overlapping ones.
+    // Replacing sequentially can expose suffixes and re-mask our own marker.
+    for K := 0 to FSensitiveValues.Count - 1 do
+    begin
+      Secret := FSensitiveValues[K];
+      if Secret = '' then
+        Continue;
+      Position := PosEx(Secret, Text, 1);
+      while Position > 0 do
+      begin
+        if Length(Covered) = 0 then
+          SetLength(Covered, Length(Text));
+        Last := Position + Length(Secret) - 1;
+        for Offset := Position to Last do
+          Covered[Offset - 1] := True;
+        Position := PosEx(Secret, Text, Position + 1);
+      end;
+    end;
+    if Length(Covered) = 0 then
+      Exit;
+    Builder := TStringBuilder.Create;
+    try
+      Position := 0;
+      while Position < Length(Text) do
+      begin
+        Start := Position;
+        if Covered[Position] then
+        begin
+          while (Position < Length(Text)) and Covered[Position] do
+            Inc(Position);
+          Builder.Append('[REDACTED]');
+        end
+        else
+        begin
+          while (Position < Length(Text)) and not Covered[Position] do
+            Inc(Position);
+          Builder.Append(Copy(Text, Start + 1, Position - Start));
+        end;
+      end;
+      Result := Builder.ToString;
+    finally
+      Builder.Free;
+    end;
+  end;
+
   function MaskJSON(Node: TJSONValue): TJSONValue;
   var
     Pair: TJSONPair;
@@ -992,7 +1046,7 @@ var
             NewChild := TJSONString.Create('[REDACTED]')
           else
             NewChild := MaskJSON(Pair.JsonValue);
-          TJSONObject(Result).AddPair(Pair.JsonString.Value, NewChild);
+          TJSONObject(Result).AddPair(MaskLiterals(Pair.JsonString.Value), NewChild);
         end;
       except
         Result.Free;
@@ -1010,8 +1064,14 @@ var
         raise;
       end;
     end
-    else if Node is TJSONString then
+    // In Rio/Athens TJSONNumber inherits from TJSONString. Do not turn
+    // ordinary numbers into strings or partially redact a numeric scalar.
+    else if (Node is TJSONString) and not (Node is TJSONNumber) then
       Result := TJSONString.Create(MaskText(Node.Value))
+    else if MaskLiterals(Node.ToJSON) <> Node.ToJSON then
+      // A partial substitution would produce invalid JSON (e.g. 12[REDACTED]).
+      // Mask the entire matching scalar, preserving other numbers/bools/nulls.
+      Result := TJSONString.Create('[REDACTED]')
     else
       Result := Node.Clone as TJSONValue;
   end;
@@ -1040,9 +1100,7 @@ begin
       Structured.Free;
     end;
     // Known literal secrets are removed even without a field name.
-    for I := 0 to FSensitiveValues.Count - 1 do
-      if FSensitiveValues[I] <> '' then
-        Result := StringReplace(Result, FSensitiveValues[I], '[REDACTED]', [rfReplaceAll]);
+    Result := MaskLiterals(Result);
     for I := 0 to FSensitiveFields.Count - 1 do
     begin
       Field := Trim(FSensitiveFields[I]);
