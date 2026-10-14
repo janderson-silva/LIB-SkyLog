@@ -12,6 +12,8 @@ uses
   Vcl.Forms, Vcl.Controls, Vcl.ExtCtrls;
 
 type
+  TSkyLogFormat = (slfJSON, slfText);
+  TSkyLogLevel = (sllDebug, sllInfo, sllWarning, sllError, sllFatal);
   TSkyLog = class;
   TSkyLogWriteErrorEvent = procedure(Sender: TObject; const FileName,
     ErrorMessage: string) of object;
@@ -38,7 +40,16 @@ type
     FOnGetStackTrace: TSkyLogStackTraceEvent;
     FOnDiagnostics: TNotifyEvent;
     FNotifyingDiagnostics: Boolean;
+    FLogFormat: TSkyLogFormat;
+    FMinimumLevel: TSkyLogLevel;
+    FMaskSensitiveData: Boolean;
+    FSensitiveFields: TStrings;
+    FSensitiveValues: TStrings;
+    function GetRoot: TComponent;
     function GetForm: TCustomForm;
+    procedure SetSensitiveFields(const Value: TStrings);
+    procedure SetSensitiveValues(const Value: TStrings);
+    function MaskText(const Value: string): string;
     procedure SetEnabled(const Value: Boolean);
     procedure SetMaxFileSizeMB(const Value: Integer);
     procedure SetRetentionDays(const Value: Integer);
@@ -46,6 +57,9 @@ type
     procedure AttachTree(Component: TComponent);
     procedure Detach;
     procedure WriteException(E: Exception; Component: TComponent;
+      const EventName, HandlerName, Phase: string; Address: Pointer);
+    procedure WriteRecord(Level: TSkyLogLevel; const MessageText: string;
+      E: Exception; Component: TComponent;
       const EventName, HandlerName, Phase: string; Address: Pointer);
   protected
     procedure Loaded; override;
@@ -58,11 +72,24 @@ type
       const EventName: string = ''; const HandlerName: string = '');
     procedure Execute(Component: TComponent; const EventName: string;
       const Action: TProc);
+    procedure Log(Level: TSkyLogLevel; const MessageText: string;
+      Component: TComponent = nil; const EventName: string = '');
+    procedure Debug(const MessageText: string; Component: TComponent = nil);
+    procedure Info(const MessageText: string; Component: TComponent = nil);
+    procedure Warning(const MessageText: string; Component: TComponent = nil);
+    procedure Error(const MessageText: string; Component: TComponent = nil);
+    procedure Fatal(const MessageText: string; Component: TComponent = nil);
+    property MonitoredRoot: TComponent read GetRoot;
     property MonitoredForm: TCustomForm read GetForm;
     property Diagnostics: TStringList read FDiagnostics;
     property LastWriteError: string read FLastWriteError;
     property LastCleanupError: string read FLastCleanupError;
   published
+    property LogFormat: TSkyLogFormat read FLogFormat write FLogFormat default slfJSON;
+    property MinimumLevel: TSkyLogLevel read FMinimumLevel write FMinimumLevel default sllDebug;
+    property MaskSensitiveData: Boolean read FMaskSensitiveData write FMaskSensitiveData default True;
+    property SensitiveFields: TStrings read FSensitiveFields write SetSensitiveFields;
+    property SensitiveValues: TStrings read FSensitiveValues write SetSensitiveValues;
     property Enabled: Boolean read FEnabled write SetEnabled default True;
     property LogDirectory: string read FLogDirectory write FLogDirectory;
     property LogAbort: Boolean read FLogAbort write FLogAbort default False;
@@ -80,7 +107,7 @@ type
 implementation
 
 uses
-  System.IOUtils, System.DateUtils, System.Hash,
+  System.IOUtils, System.DateUtils, System.Hash, System.JSON, System.RegularExpressions,
   FireDAC.Stan.Error, FireDAC.Comp.Client;
 
 type
@@ -276,7 +303,7 @@ var
   I, Y, M, D, Part: Integer;
 begin
   Result := False;
-  if ExtractFileExt(Name) <> '.log' then
+  if (ExtractFileExt(Name) <> '.log') and (ExtractFileExt(Name) <> '.jsonl') then
     Exit;
   Parts := ChangeFileExt(Name, '').Split(['_']);
   if Length(Parts) <> 3 then
@@ -329,7 +356,7 @@ begin
     Result := True;
     CleanupDates.AddOrSetValue(Key, Trunc(Stamp));
     Cutoff := Trunc(Stamp) - RetentionDays + 1;
-    Status := FindFirst(TPath.Combine(Directory, 'skylog-*.log'), faAnyFile, Search);
+    Status := FindFirst(TPath.Combine(Directory, 'skylog-*'), faAnyFile, Search);
     if Status = ERROR_FILE_NOT_FOUND then
       Exit;
     if Status <> 0 then
@@ -377,7 +404,7 @@ begin
   end;
 end;
 
-procedure AppendLog(const Directory, BaseName: string; const Bytes: TBytes;
+procedure AppendLog(const Directory, BaseName, Extension: string; const Bytes: TBytes;
   MaxFileSizeMB: Integer; out FileName: string);
 var
   Base: string;
@@ -386,14 +413,15 @@ var
   Stream: TFileStream;
 begin
   Base := TPath.Combine(Directory, BaseName);
-  if not FileParts.TryGetValue(Base, Part) then
+  // Each format maintains its own segment counter.
+  if not FileParts.TryGetValue(Base + Extension, Part) then
     Part := 1;
   Limit := Int64(MaxFileSizeMB) * 1024 * 1024;
   while True do
   begin
     if Part > 999999 then
       raise EInOutError.Create('Limite de segmentos diarios do log atingido.');
-    FileName := Base + '_' + Format('%.6d', [Part]) + '.log';
+    FileName := Base + '_' + Format('%.6d', [Part]) + Extension;
     if FileExists(FileName) then
       Stream := TFileStream.Create(FileName, fmOpenReadWrite or fmShareDenyWrite)
     else
@@ -406,7 +434,7 @@ begin
         Stream.Seek(0, soEnd);
         if Length(Bytes) > 0 then
           Stream.WriteBuffer(Bytes[0], Length(Bytes));
-        FileParts.AddOrSetValue(Base, Part);
+        FileParts.AddOrSetValue(Base + Extension, Part);
         Exit;
       end;
     finally
@@ -726,6 +754,14 @@ constructor TSkyLog.Create(AOwner: TComponent);
 begin
   inherited;
   FEnabled := True;
+  FLogFormat := slfJSON;
+  FMinimumLevel := sllDebug;
+  FMaskSensitiveData := True;
+  FSensitiveFields := TStringList.Create;
+  FSensitiveValues := TStringList.Create;
+  FSensitiveFields.CommaText := 'password,passwd,pwd,senha,token,access_token,refresh_token,' +
+    'authorization,api_key,apikey,secret,client_secret,cpf,cnpj,card,card_number,cvv,' +
+    'conta,agencia,account,iban';
   FMaxFileSizeMB := 10;
   FRetentionDays := 30;
   FHooks := TList<TComponent>.Create;
@@ -740,7 +776,17 @@ begin
   Detach;
   FHooks.Free;
   FDiagnostics.Free;
+  FSensitiveFields.Free;
+  FSensitiveValues.Free;
   inherited;
+end;
+
+function TSkyLog.GetRoot: TComponent;
+begin
+  if (Owner is TCustomForm) or (Owner is TDataModule) then
+    Result := Owner
+  else
+    Result := nil;
 end;
 
 function TSkyLog.GetForm: TCustomForm;
@@ -754,14 +800,14 @@ end;
 function TSkyLog.OwnsComponent(Component: TComponent): Boolean;
 begin
   Result := False;
-  if MonitoredForm = nil then
+  if MonitoredRoot = nil then
     Exit;
   while Component <> nil do
   begin
-    if Component = MonitoredForm then
+    if Component = MonitoredRoot then
       Exit(True);
-    // A child form is a separate scope even when its Owner is this form.
-    if Component is TCustomForm then
+    // Forms and DataModules are separate scopes, including nested owners.
+    if (Component is TCustomForm) or (Component is TDataModule) then
       Exit(False);
     Component := Component.Owner;
   end;
@@ -814,7 +860,7 @@ begin
       except
         on E: Exception do
         begin
-          FDiagnostics.Add('OnDiagnostics: ' + E.ClassName + ': ' + E.Message);
+          FDiagnostics.Add(MaskText('OnDiagnostics: ' + E.ClassName + ': ' + E.Message));
           OutputDebugString(PChar('SkyLog: ' + FDiagnostics[FDiagnostics.Count - 1]));
         end;
       end;
@@ -846,19 +892,19 @@ begin
   FDiagnostics.Clear;
   if not FEnabled then
     Exit;
-  if MonitoredForm = nil then
-    raise EInvalidOperation.Create('O Owner do SkyLog deve ser o formulario monitorado.');
+  if MonitoredRoot = nil then
+    raise EInvalidOperation.Create('O Owner do SkyLog deve ser o formulario ou DataModule monitorado.');
   for I := 0 to Owner.ComponentCount - 1 do
     if (Owner.Components[I] is TSkyLog) and (Owner.Components[I] <> Self) and
       TSkyLog(Owner.Components[I]).Enabled then
-      raise EInvalidOperation.Create('Use apenas um SkyLog ativo por formulario.');
+      raise EInvalidOperation.Create('Use apenas um SkyLog ativo por formulario ou DataModule.');
 {$IF CompilerVersion < 37.0}
   // Loading the package in the Rio IDE must not create a timer/window.
   // Start retirement only when a form is actually monitored at runtime.
   if Retirement = nil then
     Retirement := TSkyRetirement.Create;
 {$IFEND}
-  AttachTree(MonitoredForm);
+  AttachTree(MonitoredRoot);
   NotifyDiagnostics;
 end;
 
@@ -894,8 +940,8 @@ begin
           TRttiMethodType(RType)));
       except
         on E: Exception do
-          FDiagnostics.Add(ComponentPath(Component) + '.' + string(Prop.Name) +
-            ': ' + E.ClassName + ': ' + E.Message);
+          FDiagnostics.Add(MaskText(ComponentPath(Component) + '.' + string(Prop.Name) +
+            ': ' + E.ClassName + ': ' + E.Message));
       end;
     end;
   finally
@@ -905,21 +951,163 @@ begin
     AttachTree(Component.Components[I]);
 end;
 
+procedure TSkyLog.SetSensitiveFields(const Value: TStrings);
+begin
+  FSensitiveFields.Assign(Value);
+end;
+
+procedure TSkyLog.SetSensitiveValues(const Value: TStrings);
+begin
+  FSensitiveValues.Assign(Value);
+end;
+
+function TSkyLog.MaskText(const Value: string): string;
+var
+  Field, Pattern: string;
+  Matches: TMatchCollection;
+  I, J: Integer;
+  Structured, Sanitized: TJSONValue;
+
+  function MaskJSON(Node: TJSONValue): TJSONValue;
+  var
+    Pair: TJSONPair;
+    Child, NewChild: TJSONValue;
+    K: Integer;
+    Sensitive: Boolean;
+  begin
+    if Node is TJSONObject then
+    begin
+      Result := TJSONObject.Create;
+      try
+        for Pair in TJSONObject(Node) do
+        begin
+          Sensitive := False;
+          for K := 0 to FSensitiveFields.Count - 1 do
+            if SameText(Pair.JsonString.Value, Trim(FSensitiveFields[K])) then
+            begin
+              Sensitive := True;
+              Break;
+            end;
+          if Sensitive then
+            NewChild := TJSONString.Create('[REDACTED]')
+          else
+            NewChild := MaskJSON(Pair.JsonValue);
+          TJSONObject(Result).AddPair(Pair.JsonString.Value, NewChild);
+        end;
+      except
+        Result.Free;
+        raise;
+      end;
+    end
+    else if Node is TJSONArray then
+    begin
+      Result := TJSONArray.Create;
+      try
+        for Child in TJSONArray(Node) do
+          TJSONArray(Result).AddElement(MaskJSON(Child));
+      except
+        Result.Free;
+        raise;
+      end;
+    end
+    else if Node is TJSONString then
+      Result := TJSONString.Create(MaskText(Node.Value))
+    else
+      Result := Node.Clone as TJSONValue;
+  end;
+
+begin
+  Result := Value;
+  if not FMaskSensitiveData then
+    Exit;
+  try
+    // Structured messages can contain sensitive arrays/objects, not just scalars.
+    Structured := nil;
+    if (Trim(Value) <> '') and CharInSet(Trim(Value)[1], ['{', '[']) then
+      Structured := TJSONObject.ParseJSONValue(Value);
+    try
+      if (Structured is TJSONObject) or (Structured is TJSONArray) then
+      begin
+        Sanitized := MaskJSON(Structured);
+        try
+          Result := Sanitized.ToJSON;
+        finally
+          Sanitized.Free;
+        end;
+        Exit;
+      end;
+    finally
+      Structured.Free;
+    end;
+    // Known literal secrets are removed even without a field name.
+    for I := 0 to FSensitiveValues.Count - 1 do
+      if FSensitiveValues[I] <> '' then
+        Result := StringReplace(Result, FSensitiveValues[I], '[REDACTED]', [rfReplaceAll]);
+    for I := 0 to FSensitiveFields.Count - 1 do
+    begin
+      Field := Trim(FSensitiveFields[I]);
+      if Field = '' then
+        Continue;
+      // Quoted values preserve embedded spaces. Unquoted values extend to a delimiter.
+      Pattern := '(?i)(?<![\w])(["'']?' + TRegEx.Escape(Field) +
+        '["'']?\s*[:=]\s*)("(?:\\.|[^"\\])*"|''(?:''''|[^''])*''|[^\r\n,;&|}\]]+)';
+      Matches := TRegEx.Matches(Result, Pattern);
+      for J := Matches.Count - 1 downto 0 do
+      begin
+        Delete(Result, Matches[J].Groups[2].Index, Matches[J].Groups[2].Length);
+        Insert('[REDACTED]', Result, Matches[J].Groups[2].Index);
+      end;
+    end;
+    Result := TRegEx.Replace(Result,
+      '(?<!\d)(?:\d{3}\.\d{3}\.\d{3}-\d{2}|\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})(?!\d)',
+      '[REDACTED]');
+  except
+    // Never fall back to potentially sensitive text if redaction fails.
+    Result := '[REDACTED]';
+  end;
+end;
+
 procedure TSkyLog.WriteException(E: Exception; Component: TComponent;
   const EventName, HandlerName, Phase: string; Address: Pointer);
+begin
+  if (E = nil) or ((E is EAbort) and not FLogAbort) then
+    Exit;
+  WriteRecord(sllError, E.Message, E, Component, EventName, HandlerName, Phase, Address);
+end;
+
+procedure TSkyLog.WriteRecord(Level: TSkyLogLevel; const MessageText: string;
+  E: Exception; Component: TComponent;
+  const EventName, HandlerName, Phase: string; Address: Pointer);
+const
+  LevelNames: array[TSkyLogLevel] of string = ('Debug', 'Info', 'Warning', 'Error', 'Fatal');
 var
   Stamp: TDateTime;
-  Directory, FileName, Entry, Code, Chain: string;
+  Directory, FileName, Entry, Code, Chain, Extension: string;
   Timestamp, AppName, AppVersion, AppBuild, RecordID, Correlation: string;
   Trace, ProviderTrace, TraceError, CleanupFile, CleanupError: string;
+  ScopeKind, FormName, ExceptionName, AddressText: string;
   Frame: PLogFrame;
+  Frames: TList<PLogFrame>;
   DB: EFDDBEngineException;
   I: Integer;
   Bytes: TBytes;
   DirectoryAttributes: DWORD;
+  Document, Item: TJSONObject;
+  ContextItems, DatabaseItems: TJSONArray;
+
+  function V(const Text: string): string;
+  begin
+    Result := LogValue(MaskText(Text));
+  end;
+
+  procedure AddText(Obj: TJSONObject; const Key, Text: string);
+  begin
+    Obj.AddPair(Key, MaskText(Text));
+  end;
+
 begin
-  if (E = nil) or not FEnabled or FWriting or
-    ((E is EAbort) and not FLogAbort) or not OwnsComponent(Component) then
+  if not FEnabled or FWriting or (Level < FMinimumLevel) or
+    not OwnsComponent(Component) then
     Exit;
   FWriting := True;
   FileName := '';
@@ -953,7 +1141,20 @@ begin
         Directory := TPath.Combine(ExtractFilePath(ParamStr(0)), Directory);
       Directory := TPath.Combine(ExpandFileName(Directory), StorageName);
       FileName := Directory;
-      Code := 'n/a';
+      ScopeKind := 'DataModule';
+      FormName := '';
+      if MonitoredForm <> nil then
+      begin
+        ScopeKind := 'Form';
+        FormName := MonitoredForm.Name;
+      end;
+      ExceptionName := '';
+      if E <> nil then
+        ExceptionName := E.ClassName;
+      AddressText := '';
+      if Address <> nil then
+        AddressText := '0x' + IntToHex(NativeUInt(Address), SizeOf(Pointer) * 2);
+      Code := '';
       DB := nil;
       if E is EFDDBEngineException then
         DB := EFDDBEngineException(E)
@@ -963,69 +1164,151 @@ begin
         Code := IntToStr(DB.ErrorCode)
       else if E is EOSError then
         Code := IntToStr(EOSError(E).ErrorCode);
-      Entry := '[' + Timestamp + '] Formato: 2' +
-        ' | Aplicacao: ' + LogValue(AppName) + ' | Versao: ' + LogValue(AppVersion) +
-        ' | Build: ' + LogValue(AppBuild) + ' | Execucao: ' + ProcessSession +
-        ' | Origem: ' + LogValue(ComponentPath(Component)) +
-        ' | Formulario: ' + LogValue(MonitoredForm.Name) +
-        ' | Componente: ' + LogValue(Component.Name) + ' (' + Component.ClassName + ')' +
-        ' | Evento: ' + LogValue(EventName) + ' | Metodo: ' + LogValue(HandlerName) +
-        ' | Excecao: ' + E.ClassName + ' | Codigo: ' + Code + ' | Fase: ' + Phase +
-        ' | PID: ' + UIntToStr(GetCurrentProcessId) +
-        ' | Thread: ' + UIntToStr(GetCurrentThreadId) +
-        ' | Correlacao: ' + Correlation + ' | Registro: ' + RecordID;
-      if Address <> nil then
-        Entry := Entry + ' | Endereco: 0x' + IntToHex(NativeUInt(Address), SizeOf(Pointer) * 2)
-      else
-        Entry := Entry + ' | Endereco: n/a';
-      Entry := Entry + ' | Erro: ' + LogValue(E.Message) + sLineBreak;
-      Chain := '';
-      Frame := CurrentFrame;
-      while Frame <> nil do
-      begin
-        if Chain <> '' then
-          Chain := ' -> ' + Chain;
-        Chain := LogValue(Frame.Origin) + '.' + LogValue(Frame.EventName) +
-          ' [' + LogValue(Frame.HandlerName) + ']' + Chain;
-        Frame := Frame.Parent;
-      end;
-      if Chain <> '' then
-        Entry := Entry + '  Contexto: ' + Chain + sLineBreak;
-      if DB <> nil then
-      begin
-        for I := 0 to DB.ErrorCount - 1 do
-          Entry := Entry + Format('  Banco[%d]: Codigo=%d | Objeto=%s | Erro=%s',
-            [I, DB.Errors[I].ErrorCode, LogValue(DB.Errors[I].ObjName),
-             LogValue(DB.Errors[I].Message)]) + sLineBreak;
-      end;
       Trace := '';
       TraceError := '';
-      try
-        Trace := E.StackTrace;
-      except
-        on ProviderError: Exception do
-          TraceError := 'Exception.StackTrace: ' + ProviderError.ClassName +
-            ': ' + ProviderError.Message;
-      end;
-      if Assigned(FOnGetStackTrace) then
+      if E <> nil then
       begin
-        ProviderTrace := Trace;
         try
-          FOnGetStackTrace(Self, E, Address, ProviderTrace);
-          Trace := ProviderTrace;
+          Trace := E.StackTrace;
         except
           on ProviderError: Exception do
-          begin
-            if TraceError <> '' then
-              TraceError := TraceError + '; ';
-            TraceError := TraceError + 'OnGetStackTrace: ' + ProviderError.ClassName +
+            TraceError := 'Exception.StackTrace: ' + ProviderError.ClassName +
               ': ' + ProviderError.Message;
+        end;
+        if Assigned(FOnGetStackTrace) then
+        begin
+          ProviderTrace := Trace;
+          try
+            FOnGetStackTrace(Self, E, Address, ProviderTrace);
+            Trace := ProviderTrace;
+          except
+            on ProviderError: Exception do
+            begin
+              if TraceError <> '' then
+                TraceError := TraceError + '; ';
+              TraceError := TraceError + 'OnGetStackTrace: ' + ProviderError.ClassName +
+                ': ' + ProviderError.Message;
+            end;
           end;
         end;
       end;
-      Entry := Entry + '  StackTrace: ' + LogValue(Trace) + sLineBreak;
-      if TraceError <> '' then
-        Entry := Entry + '  StackTraceErro: ' + SingleLine(TraceError) + sLineBreak;
+      if FLogFormat = slfJSON then
+      begin
+        Extension := '.jsonl';
+        Document := TJSONObject.Create;
+        try
+          Document.AddPair('formato', TJSONNumber.Create(2));
+          AddText(Document, 'timestamp', Timestamp);
+          AddText(Document, 'level', LevelNames[Level]);
+          AddText(Document, 'aplicacao', AppName);
+          AddText(Document, 'versao', AppVersion);
+          AddText(Document, 'build', AppBuild);
+          AddText(Document, 'execucao', ProcessSession);
+          AddText(Document, 'origem', ComponentPath(Component));
+          AddText(Document, 'escopo', MonitoredRoot.Name);
+          AddText(Document, 'tipoEscopo', ScopeKind);
+          AddText(Document, 'formulario', FormName);
+          AddText(Document, 'componente', Component.Name);
+          AddText(Document, 'classeComponente', Component.ClassName);
+          AddText(Document, 'evento', EventName);
+          AddText(Document, 'metodo', HandlerName);
+          if E = nil then
+            Document.AddPair('excecao', TJSONNull.Create)
+          else
+            AddText(Document, 'excecao', ExceptionName);
+          if Code = '' then
+            Document.AddPair('codigo', TJSONNull.Create)
+          else
+            Document.AddPair('codigo', TJSONNumber.Create(Code));
+          AddText(Document, 'fase', Phase);
+          Document.AddPair('pid', TJSONNumber.Create(Int64(GetCurrentProcessId)));
+          Document.AddPair('thread', TJSONNumber.Create(Int64(GetCurrentThreadId)));
+          AddText(Document, 'correlacao', Correlation);
+          AddText(Document, 'registro', RecordID);
+          AddText(Document, 'endereco', AddressText);
+          AddText(Document, 'mensagem', MessageText);
+          ContextItems := TJSONArray.Create;
+          Document.AddPair('contexto', ContextItems);
+          Frames := TList<PLogFrame>.Create;
+          try
+            Frame := CurrentFrame;
+            while Frame <> nil do
+            begin
+              Frames.Add(Frame);
+              Frame := Frame.Parent;
+            end;
+            for I := Frames.Count - 1 downto 0 do
+            begin
+              Item := TJSONObject.Create;
+              ContextItems.AddElement(Item);
+              AddText(Item, 'origem', Frames[I].Origin);
+              AddText(Item, 'evento', Frames[I].EventName);
+              AddText(Item, 'metodo', Frames[I].HandlerName);
+            end;
+          finally
+            Frames.Free;
+          end;
+          DatabaseItems := TJSONArray.Create;
+          Document.AddPair('banco', DatabaseItems);
+          if DB <> nil then
+            for I := 0 to DB.ErrorCount - 1 do
+            begin
+              Item := TJSONObject.Create;
+              DatabaseItems.AddElement(Item);
+              Item.AddPair('codigo', TJSONNumber.Create(DB.Errors[I].ErrorCode));
+              AddText(Item, 'objeto', DB.Errors[I].ObjName);
+              AddText(Item, 'mensagem', DB.Errors[I].Message);
+            end;
+          AddText(Document, 'stackTrace', Trace);
+          if TraceError <> '' then
+            AddText(Document, 'stackTraceErro', TraceError);
+          Entry := Document.ToJSON + sLineBreak;
+        finally
+          Document.Free;
+        end;
+      end
+      else
+      begin
+        Extension := '.log';
+        Entry := '[' + Timestamp + '] Formato: 2' +
+          ' | Level: ' + LevelNames[Level] +
+          ' | Aplicacao: ' + V(AppName) + ' | Versao: ' + V(AppVersion) +
+          ' | Build: ' + V(AppBuild) + ' | Execucao: ' + ProcessSession +
+          ' | Origem: ' + V(ComponentPath(Component)) +
+          ' | Escopo: ' + V(MonitoredRoot.Name) + ' | TipoEscopo: ' + ScopeKind +
+          ' | Formulario: ' + V(FormName) +
+          ' | Componente: ' + V(Component.Name) + ' (' + V(Component.ClassName) + ')' +
+          ' | Evento: ' + V(EventName) + ' | Metodo: ' + V(HandlerName) +
+          ' | Excecao: ' + V(ExceptionName) + ' | Codigo: ' + LogValue(Code) + ' | Fase: ' + V(Phase) +
+          ' | PID: ' + UIntToStr(GetCurrentProcessId) +
+          ' | Thread: ' + UIntToStr(GetCurrentThreadId) +
+          ' | Correlacao: ' + Correlation + ' | Registro: ' + RecordID +
+          ' | Endereco: ' + LogValue(AddressText);
+        if E <> nil then
+          Entry := Entry + ' | Erro: ' + V(MessageText) + sLineBreak
+        else
+          Entry := Entry + ' | Mensagem: ' + V(MessageText) + sLineBreak;
+        Chain := '';
+        Frame := CurrentFrame;
+        while Frame <> nil do
+        begin
+          if Chain <> '' then
+            Chain := ' -> ' + Chain;
+          Chain := V(Frame.Origin) + '.' + V(Frame.EventName) +
+            ' [' + V(Frame.HandlerName) + ']' + Chain;
+          Frame := Frame.Parent;
+        end;
+        if Chain <> '' then
+          Entry := Entry + '  Contexto: ' + Chain + sLineBreak;
+        if DB <> nil then
+          for I := 0 to DB.ErrorCount - 1 do
+            Entry := Entry + Format('  Banco[%d]: Codigo=%d | Objeto=%s | Erro=%s',
+              [I, DB.Errors[I].ErrorCode, V(DB.Errors[I].ObjName),
+               V(DB.Errors[I].Message)]) + sLineBreak;
+        Entry := Entry + '  StackTrace: ' + V(Trace) + sLineBreak;
+        if TraceError <> '' then
+          Entry := Entry + '  StackTraceErro: ' + V(TraceError) + sLineBreak;
+      end;
       Bytes := TEncoding.UTF8.GetBytes(Entry);
       CleanupError := '';
       System.TMonitor.Enter(FileLock);
@@ -1038,19 +1321,20 @@ begin
         if DirectoryAttributes and FILE_ATTRIBUTE_REPARSE_POINT <> 0 then
           raise EInOutError.Create('A subpasta exclusiva do SkyLog nao pode ser um link: ' + Directory);
         AppendLog(Directory, 'skylog-' + FormatDateTime('yyyy-mm-dd', Stamp) +
-          '_' + ProcessSession, Bytes, FMaxFileSizeMB, FileName);
+          '_' + ProcessSession, Extension, Bytes, FMaxFileSizeMB, FileName);
         if CleanupLogs(Directory, Stamp, FRetentionDays, CleanupFile, CleanupError) then
-          FLastCleanupError := CleanupError;
+          FLastCleanupError := MaskText(CleanupError);
       finally
         System.TMonitor.Exit(FileLock);
       end;
       FLastWriteError := '';
       if CleanupError <> '' then
       begin
+        CleanupError := MaskText(CleanupError);
         OutputDebugString(PChar('SkyLog Cleanup: ' + CleanupError));
         if Assigned(FOnCleanupError) then
           try
-            FOnCleanupError(Self, CleanupFile, CleanupError);
+            FOnCleanupError(Self, MaskText(CleanupFile), CleanupError);
           except
             // Maintenance and its notification never replace the original error.
           end;
@@ -1058,11 +1342,11 @@ begin
     except
       on LogError: Exception do
       begin
-        FLastWriteError := LogError.ClassName + ': ' + LogError.Message;
+        FLastWriteError := MaskText(LogError.ClassName + ': ' + LogError.Message);
         OutputDebugString(PChar('SkyLog: ' + FLastWriteError));
         if Assigned(FOnWriteError) then
           try
-            FOnWriteError(Self, FileName, FLastWriteError);
+            FOnWriteError(Self, MaskText(FileName), FLastWriteError);
           except
             // A logging failure must never replace the application's exception.
           end;
@@ -1073,13 +1357,46 @@ begin
   end;
 end;
 
+procedure TSkyLog.Log(Level: TSkyLogLevel; const MessageText: string;
+  Component: TComponent; const EventName: string);
+begin
+  if Component = nil then
+    Component := MonitoredRoot;
+  WriteRecord(Level, MessageText, nil, Component, EventName, '', 'Manual', nil);
+end;
+
+procedure TSkyLog.Debug(const MessageText: string; Component: TComponent);
+begin
+  Log(sllDebug, MessageText, Component);
+end;
+
+procedure TSkyLog.Info(const MessageText: string; Component: TComponent);
+begin
+  Log(sllInfo, MessageText, Component);
+end;
+
+procedure TSkyLog.Warning(const MessageText: string; Component: TComponent);
+begin
+  Log(sllWarning, MessageText, Component);
+end;
+
+procedure TSkyLog.Error(const MessageText: string; Component: TComponent);
+begin
+  Log(sllError, MessageText, Component);
+end;
+
+procedure TSkyLog.Fatal(const MessageText: string; Component: TComponent);
+begin
+  Log(sllFatal, MessageText, Component);
+end;
+
 procedure TSkyLog.LogException(E: Exception; Component: TComponent;
   const EventName, HandlerName: string);
 var
   Address: Pointer;
 begin
   if Component = nil then
-    Component := MonitoredForm;
+    Component := MonitoredRoot;
   Address := nil;
   if (E <> nil) and (ExceptObject = E) then
     Address := ExceptAddr;
@@ -1094,9 +1411,9 @@ begin
   if not Assigned(Action) then
     raise EArgumentNilException.Create('Action');
   if Component = nil then
-    Component := MonitoredForm;
+    Component := MonitoredRoot;
   if not OwnsComponent(Component) then
-    raise EArgumentException.Create('O componente informado nao pertence a este formulario.');
+    raise EArgumentException.Create('O componente informado nao pertence ao escopo deste SkyLog.');
   EnterFrame(Frame, Component, EventName, '');
   try
     try

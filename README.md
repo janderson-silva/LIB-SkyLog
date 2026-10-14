@@ -1,13 +1,13 @@
 # SkyLog — componente Delphi VCL
 
-`TSkyLog` registra exceções do **formulário que é seu Owner**, dos controles e dos componentes pertencentes a esse formulário. Coloque uma instância em cada formulário que deseja monitorar e configure `LogDirectory`.
+`TSkyLog` registra exceções do **formulário ou DataModule que é seu Owner**, dos controles e dos componentes pertencentes a esse escopo. Também registra mensagens com níveis de severidade. Coloque uma instância em cada formulário ou DataModule que deseja monitorar e configure `LogDirectory`.
 
-Arquivos em UTF-8 separados por dia e execução, com rotação por tamanho, retenção configurável e data/hora local com milissegundos e fuso. A pasta é criada automaticamente. O componente mantém o tratamento normal da aplicação: registra e propaga a exceção original.
+Arquivos JSON Lines por padrão (ou texto), em UTF-8 separados por dia e execução, com rotação por tamanho, retenção configurável e data/hora local com milissegundos e fuso. A pasta é criada automaticamente. O componente mantém o tratamento normal da aplicação: registra e propaga a exceção original.
 
 ## Guia rápido
 
 1. [Instale o pacote](#instalação-na-paleta) da sua versão do Delphi.
-2. Coloque um `TSkyLog` em cada formulário que deseja monitorar. O formulário deve ser o `Owner` (proprietário) do logger; os componentes monitorados devem pertencer à sua árvore de proprietários.
+2. Coloque um `TSkyLog` em cada formulário ou DataModule que deseja monitorar. Esse escopo deve ser o `Owner` (proprietário) do logger; os componentes monitorados devem pertencer à sua árvore de proprietários.
 3. Configure `LogDirectory` para uma pasta com permissão de escrita. Se ficar vazio, será usada a pasta `logs` junto ao executável.
 4. Mantenha `Enabled = True`. Instâncias colocadas pela IDE são ativadas automaticamente ao carregar o formulário.
 5. Quando uma exceção escapar de um evento monitorado, consulte o arquivo na subpasta `skylog-v2-...` do destino. O registro identifica a origem e o motivo; arquivo e linha do fonte dependem de uma pilha com símbolos.
@@ -16,12 +16,111 @@ Não é necessário alterar o DPR nem `Application.OnException`. Se você tratar
 
 **Consulta:** [Compatibilidade](#compatibilidade) · [Configuração](#configuração) · [Como ler o log](#como-ler-o-log) · [Métodos públicos](#métodos-públicos) · [Componentes criados em código](#componentes-criados-em-código) · [Registro manual](#erros-tratados-e-operações-explícitas) · [Cobertura e limites](#cobertura-e-limites) · [Gravação e retenção](#gravação)
 
+## Formato, níveis e proteção de dados
+
+Os padrões são **JSON Lines** (`LogFormat = slfJSON`), **Debug**
+(`MinimumLevel = sllDebug`) e **mascaramento ligado** (`MaskSensitiveData = True`).
+Isso também vale para componentes de DFMs antigos que não tenham essas propriedades
+gravadas. Para preservar a saída anterior, configure explicitamente `slfText`.
+
+| Propriedade | Comportamento |
+| --- | --- |
+| `LogFormat` | `slfJSON`: um objeto JSON por linha em `.jsonl`; `slfText`: texto em `.log`. |
+| `MinimumLevel` | Menor severidade gravada. Padrão `sllDebug`, que inclui todos os níveis. |
+| `MaskSensitiveData` | Aplica proteção aos textos antes da serialização. Padrão `True`. |
+| `SensitiveFields` | Lista editável de nomes de campos a mascarar, sem distinguir maiúsculas/minúsculas. |
+| `SensitiveValues` | Valores literais a remover, com comparação exata e sensível a maiúsculas/minúsculas. Configure segredos somente em execução, evitando salvá-los no DFM ou repositório. |
+| `MonitoredRoot` | Formulário ou DataModule proprietário; disponível em código. `MonitoredForm` retorna `nil` para DataModules. |
+
+A ordem é `Debug < Info < Warning < Error < Fatal`. `Fatal` é o **mais restritivo**:
+só grava mensagens fatais. `Warning` grava Warning, Error e Fatal.
+Exceções automáticas, `LogException` e erros de `Execute` usam **Error** e respeitam
+o filtro. O filtro nunca consome a exceção original. `Fatal` apenas registra uma
+mensagem; não encerra a aplicação.
+
+```pascal
+SkyLog1.LogFormat := slfJSON;      // padrao; slfText para texto
+SkyLog1.MinimumLevel := sllDebug;  // padrao: todos os niveis
+SkyLog1.Debug('Iniciando consulta');
+SkyLog1.Info('Cadastro salvo');
+SkyLog1.Warning('Operacao demorou mais que o esperado');
+SkyLog1.Error('Falha de validacao');
+SkyLog1.Fatal('Servico essencial indisponivel');
+SkyLog1.Log(sllInfo, 'Consulta concluida', qrAux, 'Open');
+```
+
+Esses métodos aceitam um componente opcional, sempre dentro do escopo do logger;
+quando omitido, usam o formulário/DataModule proprietário. Não criam exceções
+artificiais. `Enabled = False` também desativa o registro manual.
+
+**JSON:** os registros mantêm `formato: 2`, com campos adicionais `level`, `escopo`
+e `tipoEscopo` (`Form` ou `DataModule`). `contexto` é um array ordenado do evento
+externo ao interno; `banco` é um array de erros nativos. `codigo`, `pid` e `thread`
+são numéricos; `codigo` e `excecao` são `null` quando não aplicáveis. Textos ausentes
+são strings vazias. `mensagem` contém mensagens normais ou mensagens de exceção.
+Quebras de linha e aspas são escapadas pelo serializador JSON, mantendo cada
+registro em uma única linha física. `formulario` fica vazio para DataModules.
+
+**Mascaramento:** os campos iniciais incluem `password`, `passwd`, `pwd`, `senha`,
+`token`, `access_token`, `refresh_token`, `authorization`, `api_key`, `apikey`,
+`secret`, `client_secret`, `cpf`, `cnpj`, `card`, `card_number`, `cvv`, `conta`,
+`agencia`, `account` e `iban`. Valores são substituídos por `[REDACTED]`.
+
+- Em objetos/arrays JSON válidos, campos sensíveis são mascarados recursivamente,
+  inclusive quando seu valor é outro objeto ou array.
+- Em texto livre, reconhece `campo=valor`, `campo: valor` e valores entre aspas.
+  Valores sem aspas são mascarados até o próximo delimitador ou fim da linha;
+  isso pode ocultar texto adicional para não expor parte de um segredo.
+- CPF e CNPJ com pontuação são mascarados mesmo sem nome de campo.
+- `SensitiveValues` protege valores literais mesmo sem rótulo.
+- A proteção abrange mensagens, contexto, metadados textuais, detalhes FireDAC,
+  pilha e mensagens de diagnóstico/erro do logger, nos dois formatos.
+- Se o mascaramento falhar, o texto é substituído integralmente por `[REDACTED]`.
+
+Não há detecção universal de dados pessoais: números sem identificação, texto
+arbitrário, mensagens estruturadas malformadas e outros formatos precisam de campos
+ou valores configurados. SQL e parâmetros continuam sem captura automática.
+As listas são por instância: configure cada logger conforme os dados que ele recebe.
+
+```pascal
+SkyLog1.SensitiveFields.Add('chave_integracao');
+// Em execucao, se necessario:
+// SkyLog1.SensitiveValues.Add(TokenObtidoDaConfiguracaoSegura);
+SkyLog1.Info('senha=segredo; operacao=login');
+// mensagem gravada: senha=[REDACTED]; operacao=login
+```
+
+## DataModules
+
+Coloque um `TSkyLog` no DataModule para monitorar seus eventos e componentes,
+incluindo queries e conexões FireDAC. O DataModule deve ser o `Owner` do logger.
+Para criar em código:
+
+```pascal
+SkyLog1 := TSkyLog.Create(Self); // Self e o DataModule
+SkyLog1.LogDirectory := 'C:\MeuSistema\Logs';
+// Configure os componentes e handlers antes de Refresh.
+SkyLog1.Refresh;
+SkyLog1.Info('DataModule inicializado');
+```
+
+Cada formulário ou DataModule é um escopo independente, inclusive quando criado
+com outro formulário/DataModule como proprietário. Use apenas um logger ativo por
+escopo. Um logger no formulário não captura os componentes de um DataModule
+separado; coloque outro logger nele. Chamadas aninhadas monitoradas na mesma thread
+compartilham a correlação, preservando a origem real do componente.
+
+`WindowProc` só se aplica a controles visuais. Métodos comuns de um DataModule
+chamados diretamente não são automaticamente interceptados: use `Execute` ou
+`LogException` quando necessário. O suporte continua restrito à thread principal;
+não implica suporte a DataModules usados em threads de trabalho.
+
 ## Compatibilidade
 
 - Windows, VCL, Win32 e Win64.
 - Compatível com **Delphi 10.3 Rio (compilador 33.0)**, **Delphi 12 Athens (compilador 36.0)** e **Delphi 13 Florence (compilador 37.0)**, em Win32 e Win64.
 - No Delphi 13, permanece a implementação original com `TRttiInvokableType.CreateImplementation`. Antes do Delphi 13, a criação do interceptador usa `TRttiMethod.CreateImplementation`, disponível no Rio.
-- **No Delphi 10.3, o método atribuído ao evento precisa de RTTI estendida**. Os handlers publicados dos formulários (como os criados pela IDE) e métodos públicos com RTTI padrão são atendidos. Para handlers privados/protegidos personalizados, publique o método ou habilite a geração de RTTI para sua visibilidade. Sem essa informação, o evento fica intacto e aparece em `Diagnostics`; `Execute` e `LogException` continuam disponíveis. O `OnError` do FireDAC usa uma assinatura interna e funciona mesmo sem handler anterior ou sem RTTI no handler. O Delphi 13 mantém a captura baseada apenas na RTTI do tipo do evento.
+- **No Delphi 10.3 e 12, o método atribuído ao evento precisa de RTTI estendida**. Os handlers publicados dos formulários (como os criados pela IDE) e métodos públicos com RTTI padrão são atendidos. Para handlers privados/protegidos personalizados, publique o método ou habilite a geração de RTTI para sua visibilidade. Sem essa informação, o evento fica intacto e aparece em `Diagnostics`; `Execute` e `LogException` continuam disponíveis. O `OnError` do FireDAC usa uma assinatura interna e funciona mesmo sem handler anterior ou sem RTTI no handler. O Delphi 13 mantém a captura baseada apenas na RTTI do tipo do evento.
 - FireDAC é uma dependência do pacote. A aplicação continua escolhendo seu driver: Firebird, InterBase, SQLite etc.
 - Não é um componente FMX nem compatível com Delphi 7/XE nesta implementação.
 
@@ -74,6 +173,11 @@ Eventos e informações de diagnóstico (as propriedades `LastWriteError`, `Last
 Instâncias carregadas pelo DFM são ativadas em `Loaded`, antes do `OnCreate` no ciclo normal da VCL (`OldCreateOrder=False`). Nenhuma alteração no DPR ou em `Application.OnException` é necessária.
 
 ## Como ler o log
+
+O exemplo abaixo mostra o formato de texto (`LogFormat = slfText`).
+O JSON padrão usa os campos estruturados descritos em [Formato, níveis e proteção de dados](#formato-níveis-e-proteção-de-dados).
+O texto também inclui `Level`, `Escopo` e `TipoEscopo`; em mensagens sem exceção,
+o rótulo é `Mensagem`, e os campos de exceção ficam como `n/a`.
 
 ### Exemplo de erro de conversão
 
@@ -164,10 +268,10 @@ Leitores do formato anterior precisam aceitar `Formato: 2`, o horário com fuso 
 
 | Método | Quando usar |
 | --- | --- |
-| `Refresh` | Após criar/configurar componentes ou trocar handlers em execução. Atualiza as interceptações da árvore pertencente ao formulário. |
-| `OwnsComponent(Component)` | Consulta se um componente pertence ao escopo deste logger, respeitando a cadeia de `Owner` e os limites entre formulários. |
-| `LogException(E, Component, EventName, HandlerName)` | Registra uma exceção explicitamente, por exemplo dentro de um `except` que a consome. Só `E` é obrigatório; componente omitido ou `nil` usa o formulário. Os textos de evento e método são opcionais. |
-| `Execute(Component, EventName, Action)` | Executa uma rotina anônima com um nome de operação e registra a exceção que escapar dela. Componente `nil` usa o formulário. A exceção original continua sendo propagada. |
+| `Refresh` | Após criar/configurar componentes ou trocar handlers em execução. Atualiza as interceptações da árvore pertencente ao formulário ou DataModule. |
+| `OwnsComponent(Component)` | Consulta se um componente pertence ao escopo deste logger, respeitando a cadeia de `Owner` e os limites entre formulários e DataModules. |
+| `LogException(E, Component, EventName, HandlerName)` | Registra uma exceção explicitamente, por exemplo dentro de um `except` que a consome. Só `E` é obrigatório; componente omitido ou `nil` usa o formulário ou DataModule proprietário. Os textos de evento e método são opcionais. |
+| `Execute(Component, EventName, Action)` | Executa uma rotina anônima com um nome de operação e registra a exceção que escapar dela. Componente `nil` usa o formulário ou DataModule proprietário. A exceção original continua sendo propagada. |
 
 ## Componentes criados em código
 
@@ -188,12 +292,12 @@ end;
 Para criar também o logger em código:
 
 ```pascal
-SkyLog1 := TSkyLog.Create(Self); // Self deve ser o formulario
+SkyLog1 := TSkyLog.Create(Self); // Self deve ser o formulario ou DataModule
 SkyLog1.LogDirectory := 'C:\MeuSistema\Logs';
 SkyLog1.Refresh;                // depois de atribuir os eventos
 ```
 
-`Refresh` restaura as interceptações anteriores e lê novamente a árvore de componentes. Apenas um SkyLog ativo é permitido por formulário. Componentes em frames e outros componentes pertencentes ao formulário entram na captura. Ao encontrar outro formulário na árvore, a varredura para: ele precisa de seu próprio SkyLog.
+`Refresh` restaura as interceptações anteriores e lê novamente a árvore de componentes. Apenas um SkyLog ativo é permitido por formulário ou DataModule. Componentes em frames e outros componentes pertencentes ao formulário entram na captura. Ao encontrar outro formulário ou DataModule na árvore, a varredura para: ele precisa de seu próprio SkyLog.
 
 ## Erros tratados e operações explícitas
 
@@ -221,7 +325,7 @@ SkyLog1.Execute(qrAux, 'ExecSQL',
   end);
 ```
 
-`Execute` também propaga a exceção original. `LogException` ignora componentes fora do formulário; `Execute` recusa uma origem fora do escopo. Query em DataModule não pertence ao formulário: use como contexto o próprio formulário ou um componente dele, e informe a operação/método explicitamente. Não associe uma query compartilhada a um formulário por adivinhação.
+`Execute` também propaga a exceção original. `LogException` ignora componentes fora do escopo; `Execute` recusa uma origem fora do escopo. Query em DataModule deve ser registrada pelo logger desse DataModule; alternativamente, registre a operação explícita no formulário que a chamou. Não associe uma query compartilhada a um formulário por adivinhação.
 
 ## Cobertura e limites
 
@@ -229,7 +333,7 @@ O componente usa três pontos de captura:
 
 1. Eventos publicados e atribuídos dos componentes: `OnClick`, `OnChange`, `OnCreate`, eventos de datasets etc. Preserva parâmetros `var`/`out`, retorno de função e handlers originais.
 2. `WindowProc` dos controles do formulário: captura também exceções que escapam do processamento interno de mensagens, mesmo fora de um handler publicado. Nesse caso o evento registrado é a mensagem, por exemplo `WindowProc(0x0421)`.
-3. Eventos `TFDErrorEvent`, inclusive `OnError` antes vazio, para observar erros nativos do banco. Uma conexão compartilhada só é atribuída ao formulário quando o iniciador comprova essa origem; uma query própria é observada diretamente.
+3. Eventos `TFDErrorEvent`, inclusive `OnError` antes vazio, para observar erros nativos do banco. Uma conexão compartilhada só é atribuída ao escopo quando o iniciador comprova essa origem; uma query própria é observada diretamente.
 
 Não há promessa de capturar literalmente todo erro de um processo. Ficam fora da captura automática:
 
@@ -238,7 +342,7 @@ Não há promessa de capturar literalmente todo erro de um processo. Ficam fora 
 - Erros antes da ativação, durante carregamento anterior a `Loaded`, depois da destruição do logger, encerramento forçado, corrupção fatal e falhas que impedem o processo de executar o logger.
 - Workers/`TTask`, FireDAC assíncrono e chamadas concorrentes: esta versão é voltada ao ciclo VCL na **thread principal**. Capture na thread de origem e encaminhe os detalhes à UI com o formulário ainda vivo; não reutilize um objeto `Exception` já destruído.
 - Eventos com RTTI incompleta, parâmetros sem tipo, open arrays ou convenção diferente de `register`. Eles são mantidos intactos e informados em `Diagnostics`.
-- Objetos compartilhados em DataModules e controles cujo Owner é outro formulário, mesmo que o Parent visual esteja na tela monitorada.
+- Componentes cujo Owner pertence a outro formulário ou DataModule, mesmo que o Parent visual esteja na tela monitorada. Use um logger no escopo correspondente.
 
 Linhas exatas do fonte e uma pilha completa exigem símbolos da mesma compilação e um provedor de stack trace configurado pela aplicação. O SkyLog aproveita `Exception.StackTrace` e oferece `OnGetStackTrace` para integrar o provedor escolhido. Nenhum provedor externo foi instalado ou incluído nos pacotes.
 
@@ -254,7 +358,7 @@ A gravação é síncrona, abre/acrescenta/fecha o arquivo por entrada e seriali
 
 Dentro de `LogDirectory`, o componente administra exclusivamente a subpasta `skylog-v2-<SHA256 do caminho absoluto do executável em minúsculas>`. Alterar o nome/versão exibidos no registro não altera essa subpasta. Mover ou renomear o executável cria outra área; a anterior fica preservada para gestão manual. A subpasta exclusiva não pode ser um link/junção.
 
-Os nomes seguem `skylog-<yyyy-mm-dd>_<identificador da execução>_<segmento com seis dígitos>.log`. Uma nova execução usa outro identificador, mesmo que o Windows reutilize o PID. Componentes da mesma execução e destino compartilham os segmentos; processos diferentes gravam arquivos diferentes.
+Os nomes seguem `skylog-<yyyy-mm-dd>_<identificador da execução>_<segmento com seis dígitos>.jsonl` (JSON) ou `.log` (texto). Formatos têm segmentos independentes; a troca de formato nunca mistura registros no mesmo arquivo. A retenção reconhece ambas as extensões. Uma nova execução usa outro identificador, mesmo que o Windows reutilize o PID. Componentes da mesma execução e destino compartilham os segmentos; processos diferentes gravam arquivos diferentes.
 
 A rotação acontece antes de acrescentar uma entrada que ultrapassaria `MaxFileSizeMB`. O registro completo, incluindo seus detalhes, fica no mesmo segmento. Se uma única entrada ultrapassar o limite, ela é preservada inteira em um segmento próprio, que pode ficar maior que o tamanho configurado. Zero desativa apenas o limite por tamanho; a separação por dia e execução continua. O tamanho por segmento não é uma quota total de disco.
 
@@ -270,7 +374,7 @@ Mantenha `source` e `packages`, preservando sua posição relativa. Abra os `.dp
 da versão desejada conforme as instruções de instalação acima.
 A pasta `build` contém saídas geradas e não precisa acompanhar os fontes:
 ao compilar os projetos, as saídas configuradas são criadas novamente.
-As pastas `examples`, `tests` e `scripts` não fazem parte da estrutura atual.
+A pasta `tests` contém os testes atuais e suas instruções de execução. As pastas `examples` e `scripts` não fazem parte da estrutura atual.
 Os resultados dos testes anteriores estão documentados em [VALIDATION.md](VALIDATION.md).
 
 ## Organização
@@ -279,6 +383,7 @@ Os resultados dos testes anteriores estão documentados em [VALIDATION.md](VALID
 source/SkyLog.pas             Componente e implementação
 source/SkyLog.Register.pas    Registro na paleta
 packages/Delphi260/          Projetos do Delphi 10.3 Rio (Package version 260)
+packages/Delphi290/          Projetos do Delphi 12 Athens (Package version 290)
 packages/Delphi370/          Projetos do Delphi 13 Florence (Package version 370)
 ```
 
