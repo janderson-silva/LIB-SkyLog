@@ -372,9 +372,6 @@ Na integração com a aplicação, atribua `OnWriteError` para perceber perda de
 
 Mantenha `source` e `packages`, preservando sua posição relativa. Abra os `.dproj`
 da versão desejada conforme as instruções de instalação acima.
-A pasta `build` contém saídas geradas e não precisa acompanhar os fontes:
-ao compilar os projetos, as saídas configuradas são criadas novamente.
-A pasta `tests` contém os testes atuais e suas instruções de execução. As pastas `examples` e `scripts` não fazem parte da estrutura atual.
 Os resultados dos testes anteriores estão documentados em [VALIDATION.md](VALIDATION.md).
 
 ## Organização
