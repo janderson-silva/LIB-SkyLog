@@ -659,8 +659,8 @@ var
   I: Integer;
   ErrorSource: TComponent;
 begin
-  Inc(Depth);
   EnterFrame(Frame, Target, string(Prop.Name), HandlerName);
+  Inc(Depth);
   try
     // CreateImplementation includes the hidden Self parameter at index zero.
     // Scalar TValue values are copied; copy var/out values back before the
@@ -741,8 +741,8 @@ procedure TSkyWindowHook.WindowProc(var Message: TMessage);
 var
   Frame: TLogFrame;
 begin
-  Inc(Depth);
   EnterFrame(Frame, Target, 'WindowProc(0x' + IntToHex(Message.Msg, 4) + ')', '');
+  Inc(Depth);
   try
     try
       Original(Message);
