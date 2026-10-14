@@ -56,11 +56,11 @@ type
     procedure NotifyDiagnostics;
     procedure AttachTree(Component: TComponent);
     procedure Detach;
-    procedure WriteException(E: Exception; Component: TComponent;
-      const EventName, HandlerName, Phase: string; Address: Pointer);
-    procedure WriteRecord(Level: TSkyLogLevel; const MessageText: string;
+    function WriteException(E: Exception; Component: TComponent;
+      const EventName, HandlerName, Phase: string; Address: Pointer): Boolean;
+    function WriteRecord(Level: TSkyLogLevel; const MessageText: string;
       E: Exception; Component: TComponent;
-      const EventName, HandlerName, Phase: string; Address: Pointer);
+      const EventName, HandlerName, Phase: string; Address: Pointer): Boolean;
   protected
     procedure Loaded; override;
   public
@@ -704,9 +704,9 @@ begin
       on E: Exception do
       begin
         if (Logger <> nil) and (Target <> nil) and (Frame.Failure <> E) then
-          Logger.WriteException(E, Target, string(Prop.Name), HandlerName,
-            'Evento', ExceptAddr);
-        Frame.Failure := E;
+          if Logger.WriteException(E, Target, string(Prop.Name), HandlerName,
+            'Evento', ExceptAddr) then
+            Frame.Failure := E;
         raise;
       end;
     end;
@@ -751,8 +751,8 @@ begin
       on E: Exception do
       begin
         if (Logger <> nil) and (Target <> nil) and (Frame.Failure <> E) then
-          Logger.WriteException(E, Target, Frame.EventName, '', 'Mensagem', ExceptAddr);
-        Frame.Failure := E;
+          if Logger.WriteException(E, Target, Frame.EventName, '', 'Mensagem', ExceptAddr) then
+            Frame.Failure := E;
         raise;
       end;
     end;
@@ -975,7 +975,7 @@ begin
       try
         RType := RttiContext.GetType(Prop.PropType^);
         if not (RType is TRttiMethodType) then
-          Continue;
+          raise ENotSupportedException.Create('Evento sem RTTI de metodo disponivel.');
         FHooks.Add(TSkyEventHook.CreateEvent(Self, Component, Prop,
           TRttiMethodType(RType)));
       except
@@ -1183,17 +1183,20 @@ begin
   end;
 end;
 
-procedure TSkyLog.WriteException(E: Exception; Component: TComponent;
-  const EventName, HandlerName, Phase: string; Address: Pointer);
+function TSkyLog.WriteException(E: Exception; Component: TComponent;
+  const EventName, HandlerName, Phase: string; Address: Pointer): Boolean;
 begin
+  Result := False;
+  if GetCurrentThreadId <> MainThreadID then
+    Exit;
   if (E = nil) or ((E is EAbort) and not FLogAbort) then
     Exit;
-  WriteRecord(sllError, E.Message, E, Component, EventName, HandlerName, Phase, Address);
+  Result := WriteRecord(sllError, E.Message, E, Component, EventName, HandlerName, Phase, Address);
 end;
 
-procedure TSkyLog.WriteRecord(Level: TSkyLogLevel; const MessageText: string;
+function TSkyLog.WriteRecord(Level: TSkyLogLevel; const MessageText: string;
   E: Exception; Component: TComponent;
-  const EventName, HandlerName, Phase: string; Address: Pointer);
+  const EventName, HandlerName, Phase: string; Address: Pointer): Boolean;
 const
   LevelNames: array[TSkyLogLevel] of string = ('Debug', 'Info', 'Warning', 'Error', 'Fatal');
 var
@@ -1223,6 +1226,7 @@ var
   end;
 
 begin
+  Result := False;
   // The component owns VCL hooks and mutable per-instance state. A file lock
   // alone does not make logging from worker threads safe.
   if GetCurrentThreadId <> MainThreadID then
@@ -1298,6 +1302,8 @@ begin
             TraceError := 'Exception.StackTrace: ' + ProviderError.ClassName +
               ': ' + ProviderError.Message;
         end;
+        if (Guard.Logger = nil) or (Guard.Target = nil) then
+          Exit;
         if Assigned(FOnGetStackTrace) then
         begin
           ProviderTrace := Trace;
@@ -1318,6 +1324,10 @@ begin
       // OnGetStackTrace is application code and can destroy the logger or
       // the component. FreeNotification lets us stop without dereferencing it.
       if (Guard.Logger = nil) or (Guard.Target = nil) then
+        Exit;
+      // Providers may change the logger's configuration while obtaining a trace.
+      if not FEnabled or (Level < FMinimumLevel) or
+        ((E is EAbort) and not FLogAbort) or not OwnsComponent(Component) then
         Exit;
       if FLogFormat = slfJSON then
       begin
@@ -1449,6 +1459,9 @@ begin
           raise EInOutError.Create('A subpasta exclusiva do SkyLog nao pode ser um link: ' + Directory);
         AppendLog(Directory, 'skylog-' + FormatDateTime('yyyy-mm-dd', Stamp) +
           '_' + ProcessSession, Extension, Bytes, FMaxFileSizeMB, FileName);
+        // Only a persisted record suppresses logging in an enclosing frame.
+        // Filtering or a write failure must not hide an exception there.
+        Result := True;
         if CleanupLogs(Directory, Stamp, FRetentionDays, CleanupFile, CleanupError) then
           FLastCleanupError := MaskText(CleanupError);
       finally
@@ -1491,6 +1504,8 @@ end;
 procedure TSkyLog.Log(Level: TSkyLogLevel; const MessageText: string;
   Component: TComponent; const EventName: string);
 begin
+  if GetCurrentThreadId <> MainThreadID then
+    Exit;
   if Component = nil then
     Component := MonitoredRoot;
   WriteRecord(Level, MessageText, nil, Component, EventName, '', 'Manual', nil);
@@ -1526,6 +1541,8 @@ procedure TSkyLog.LogException(E: Exception; Component: TComponent;
 var
   Address: Pointer;
 begin
+  if GetCurrentThreadId <> MainThreadID then
+    Exit;
   if Component = nil then
     Component := MonitoredRoot;
   Address := nil;
@@ -1548,6 +1565,11 @@ begin
     Component := MonitoredRoot;
   if not OwnsComponent(Component) then
     raise EArgumentException.Create('O componente informado nao pertence ao escopo deste SkyLog.');
+  if not FEnabled then
+  begin
+    Action();
+    Exit;
+  end;
   Guard := TSkyHook.CreateHook(Self, Component);
   try
     EnterFrame(Frame, Component, EventName, '');
@@ -1560,8 +1582,8 @@ begin
         begin
           if (Guard.Logger <> nil) and (Guard.Target <> nil) and
             (Frame.Failure <> E) then
-            Guard.Logger.WriteException(E, Guard.Target, EventName, '', 'Operacao', ExceptAddr);
-          Frame.Failure := E;
+            if Guard.Logger.WriteException(E, Guard.Target, EventName, '', 'Operacao', ExceptAddr) then
+              Frame.Failure := E;
           raise;
         end;
       end;
