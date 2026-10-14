@@ -370,7 +370,7 @@ Na integração com a aplicação, atribua `OnWriteError` para perceber perda de
 
 ## Arquivos de instalação
 
-Mantenha `source` e `packages`, preservando sua posição relativa. Abra os `.dproj`
+Mantenha `source`, `packages` e `resources`, preservando sua posição relativa. Abra os `.dproj`
 da versão desejada conforme as instruções de instalação acima.
 Os resultados dos testes anteriores estão documentados em [VALIDATION.md](VALIDATION.md).
 
