@@ -410,7 +410,7 @@ procedure AppendLog(const Directory, BaseName, Extension: string; const Bytes: T
 var
   Base: string;
   Part: Integer;
-  Limit: Int64;
+  Limit, OriginalSize: Int64;
   Stream: TFileStream;
 begin
   Base := TPath.Combine(Directory, BaseName);
@@ -432,9 +432,20 @@ begin
       if (Limit = 0) or (Stream.Size = 0) or
         (Stream.Size + Length(Bytes) <= Limit) then
       begin
+        OriginalSize := Stream.Size;
         Stream.Seek(0, soEnd);
-        if Length(Bytes) > 0 then
-          Stream.WriteBuffer(Bytes[0], Length(Bytes));
+        try
+          if Length(Bytes) > 0 then
+            Stream.WriteBuffer(Bytes[0], Length(Bytes));
+        except
+          // A short/failed write must not leave half a JSON record before
+          // the next append. Preserve the original I/O error if rollback fails.
+          try
+            Stream.Size := OriginalSize;
+          except
+          end;
+          raise;
+        end;
         FileParts.AddOrSetValue(Base + Extension, Part);
         Exit;
       end;
@@ -824,9 +835,23 @@ procedure TSkyLog.SetEnabled(const Value: Boolean);
 begin
   if FEnabled = Value then
     Exit;
+  if ComponentState * [csDesigning, csLoading] <> [] then
+  begin
+    FEnabled := Value;
+    Exit;
+  end;
+  if GetCurrentThreadId <> MainThreadID then
+    raise EInvalidOperation.Create('SkyLog.Enabled deve ser alterado na thread principal.');
   FEnabled := Value;
   if Value then
-    Refresh
+  begin
+    try
+      Refresh;
+    except
+      FEnabled := False;
+      raise;
+    end;
+  end
   else
     Detach;
 end;
@@ -848,9 +873,11 @@ end;
 procedure TSkyLog.NotifyDiagnostics;
 var
   I: Integer;
+  Guard: TSkyHook;
 begin
   if (FDiagnostics.Count = 0) or FNotifyingDiagnostics then
     Exit;
+  Guard := TSkyHook.CreateHook(Self, Self);
   FNotifyingDiagnostics := True;
   try
     for I := 0 to FDiagnostics.Count - 1 do
@@ -861,12 +888,16 @@ begin
       except
         on E: Exception do
         begin
+          if Guard.Logger = nil then
+            Exit;
           FDiagnostics.Add(MaskText('OnDiagnostics: ' + E.ClassName + ': ' + E.Message));
           OutputDebugString(PChar('SkyLog: ' + FDiagnostics[FDiagnostics.Count - 1]));
         end;
       end;
   finally
-    FNotifyingDiagnostics := False;
+    if Guard.Logger <> nil then
+      Guard.Logger.FNotifyingDiagnostics := False;
+    Guard.Free;
   end;
 end;
 
@@ -885,27 +916,35 @@ procedure TSkyLog.Refresh;
 var
   I: Integer;
 begin
-  if csDesigning in ComponentState then
+  if ComponentState * [csDesigning, csLoading, csDestroying] <> [] then
     Exit;
   if GetCurrentThreadId <> MainThreadID then
     raise EInvalidOperation.Create('SkyLog.Refresh deve executar na thread principal.');
-  Detach;
-  FDiagnostics.Clear;
   if not FEnabled then
+  begin
+    Detach;
+    FDiagnostics.Clear;
     Exit;
+  end;
   if MonitoredRoot = nil then
     raise EInvalidOperation.Create('O Owner do SkyLog deve ser o formulario ou DataModule monitorado.');
   for I := 0 to Owner.ComponentCount - 1 do
     if (Owner.Components[I] is TSkyLog) and (Owner.Components[I] <> Self) and
       TSkyLog(Owner.Components[I]).Enabled then
       raise EInvalidOperation.Create('Use apenas um SkyLog ativo por formulario ou DataModule.');
-{$IF CompilerVersion < 37.0}
-  // Loading the package in the Rio IDE must not create a timer/window.
-  // Start retirement only when a form is actually monitored at runtime.
+  // In every Delphi version, loading the package in the IDE needs no timer.
   if Retirement = nil then
     Retirement := TSkyRetirement.Create;
-{$IFEND}
-  AttachTree(MonitoredRoot);
+  Detach;
+  FDiagnostics.Clear;
+  try
+    AttachTree(MonitoredRoot);
+  except
+    // Do not leave a half-attached tree after a fatal refresh failure.
+    FEnabled := False;
+    Detach;
+    raise;
+  end;
   NotifyDiagnostics;
 end;
 
@@ -954,27 +993,40 @@ end;
 
 procedure TSkyLog.SetSensitiveFields(const Value: TStrings);
 begin
-  FSensitiveFields.Assign(Value);
+  if Value <> FSensitiveFields then
+    FSensitiveFields.Assign(Value);
 end;
 
 procedure TSkyLog.SetSensitiveValues(const Value: TStrings);
 begin
-  FSensitiveValues.Assign(Value);
+  if Value <> FSensitiveValues then
+    FSensitiveValues.Assign(Value);
 end;
 
 function TSkyLog.MaskText(const Value: string): string;
 var
-  Field, Pattern: string;
-  Matches: TMatchCollection;
-  I, J: Integer;
   Structured, Sanitized: TJSONValue;
 
-  function MaskLiterals(const Text: string): string;
+  function MaskPlainText(const Text: string; IncludeFields: Boolean): string;
   var
     Covered: TArray<Boolean>;
-    Secret: string;
-    K, Position, Last, Offset, Start: Integer;
+    Secret, Field, Pattern: string;
+    K, J, Position, Start: Integer;
+    Matches: TMatchCollection;
     Builder: TStringBuilder;
+
+    procedure MarkRange(Index, Count: Integer);
+    var
+      Offset: Integer;
+    begin
+      if Count = 0 then
+        Exit;
+      if Length(Covered) = 0 then
+        SetLength(Covered, Length(Text));
+      for Offset := Index to Index + Count - 1 do
+        Covered[Offset - 1] := True;
+    end;
+
   begin
     Result := Text;
     // Find every occurrence in the ORIGINAL text, including overlapping ones.
@@ -987,13 +1039,29 @@ var
       Position := PosEx(Secret, Text, 1);
       while Position > 0 do
       begin
-        if Length(Covered) = 0 then
-          SetLength(Covered, Length(Text));
-        Last := Position + Length(Secret) - 1;
-        for Offset := Position to Last do
-          Covered[Offset - 1] := True;
+        MarkRange(Position, Length(Secret));
         Position := PosEx(Secret, Text, Position + 1);
       end;
+    end;
+    if IncludeFields then
+    begin
+      // Match fields against the original text too: a literal secret may
+      // overlap a field name, but must not prevent masking that field's value.
+      for K := 0 to FSensitiveFields.Count - 1 do
+      begin
+        Field := Trim(FSensitiveFields[K]);
+        if Field = '' then
+          Continue;
+        Pattern := '(?i)(?<![\w])(["'']?' + TRegEx.Escape(Field) +
+          '["'']?\s*[:=]\s*)("(?:\\.|[^"\\])*"|''(?:''''|[^''])*''|[^\r\n,;&|}\]]+)';
+        Matches := TRegEx.Matches(Text, Pattern);
+        for J := 0 to Matches.Count - 1 do
+          MarkRange(Matches[J].Groups[2].Index, Matches[J].Groups[2].Length);
+      end;
+      Matches := TRegEx.Matches(Text,
+        '(?<!\d)(?:\d{3}\.\d{3}\.\d{3}-\d{2}|\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})(?!\d)');
+      for J := 0 to Matches.Count - 1 do
+        MarkRange(Matches[J].Index, Matches[J].Length);
     end;
     if Length(Covered) = 0 then
       Exit;
@@ -1024,8 +1092,8 @@ var
 
   function MaskJSON(Node: TJSONValue): TJSONValue;
   var
-    Pair: TJSONPair;
-    Child, NewChild: TJSONValue;
+    Pair, NewPair: TJSONPair;
+    Child: TJSONValue;
     K: Integer;
     Sensitive: Boolean;
   begin
@@ -1037,16 +1105,25 @@ var
         begin
           Sensitive := False;
           for K := 0 to FSensitiveFields.Count - 1 do
-            if SameText(Pair.JsonString.Value, Trim(FSensitiveFields[K])) then
+            if (Trim(FSensitiveFields[K]) <> '') and
+              SameText(Pair.JsonString.Value, Trim(FSensitiveFields[K])) then
             begin
               Sensitive := True;
               Break;
             end;
-          if Sensitive then
-            NewChild := TJSONString.Create('[REDACTED]')
-          else
-            NewChild := MaskJSON(Pair.JsonValue);
-          TJSONObject(Result).AddPair(MaskLiterals(Pair.JsonString.Value), NewChild);
+          // The string overload of AddPair ignores empty keys in older RTLs.
+          NewPair := TJSONPair.Create(MaskPlainText(Pair.JsonString.Value, False),
+            TJSONValue(nil));
+          try
+            if Sensitive then
+              NewPair.JsonValue := TJSONString.Create('[REDACTED]')
+            else
+              NewPair.JsonValue := MaskJSON(Pair.JsonValue);
+            TJSONObject(Result).AddPair(NewPair);
+            NewPair := nil;
+          finally
+            NewPair.Free;
+          end;
         end;
       except
         Result.Free;
@@ -1068,7 +1145,7 @@ var
     // ordinary numbers into strings or partially redact a numeric scalar.
     else if (Node is TJSONString) and not (Node is TJSONNumber) then
       Result := TJSONString.Create(MaskText(Node.Value))
-    else if MaskLiterals(Node.ToJSON) <> Node.ToJSON then
+    else if MaskPlainText(Node.ToJSON, False) <> Node.ToJSON then
       // A partial substitution would produce invalid JSON (e.g. 12[REDACTED]).
       // Mask the entire matching scalar, preserving other numbers/bools/nulls.
       Result := TJSONString.Create('[REDACTED]')
@@ -1099,26 +1176,7 @@ begin
     finally
       Structured.Free;
     end;
-    // Known literal secrets are removed even without a field name.
-    Result := MaskLiterals(Result);
-    for I := 0 to FSensitiveFields.Count - 1 do
-    begin
-      Field := Trim(FSensitiveFields[I]);
-      if Field = '' then
-        Continue;
-      // Quoted values preserve embedded spaces. Unquoted values extend to a delimiter.
-      Pattern := '(?i)(?<![\w])(["'']?' + TRegEx.Escape(Field) +
-        '["'']?\s*[:=]\s*)("(?:\\.|[^"\\])*"|''(?:''''|[^''])*''|[^\r\n,;&|}\]]+)';
-      Matches := TRegEx.Matches(Result, Pattern);
-      for J := Matches.Count - 1 downto 0 do
-      begin
-        Delete(Result, Matches[J].Groups[2].Index, Matches[J].Groups[2].Length);
-        Insert('[REDACTED]', Result, Matches[J].Groups[2].Index);
-      end;
-    end;
-    Result := TRegEx.Replace(Result,
-      '(?<!\d)(?:\d{3}\.\d{3}\.\d{3}-\d{2}|\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2})(?!\d)',
-      '[REDACTED]');
+    Result := MaskPlainText(Value, True);
   except
     // Never fall back to potentially sensitive text if redaction fails.
     Result := '[REDACTED]';
@@ -1152,6 +1210,7 @@ var
   DirectoryAttributes: DWORD;
   Document, Item: TJSONObject;
   ContextItems, DatabaseItems: TJSONArray;
+  Guard: TSkyHook;
 
   function V(const Text: string): string;
   begin
@@ -1164,9 +1223,15 @@ var
   end;
 
 begin
-  if not FEnabled or FWriting or (Level < FMinimumLevel) or
+  // The component owns VCL hooks and mutable per-instance state. A file lock
+  // alone does not make logging from worker threads safe.
+  if GetCurrentThreadId <> MainThreadID then
+    Exit;
+  if (ComponentState * [csDesigning, csLoading, csDestroying] <> []) or
+    not FEnabled or FWriting or (Level < FMinimumLevel) or
     not OwnsComponent(Component) then
     Exit;
+  Guard := TSkyHook.CreateHook(Self, Component);
   FWriting := True;
   FileName := '';
   try
@@ -1250,6 +1315,10 @@ begin
           end;
         end;
       end;
+      // OnGetStackTrace is application code and can destroy the logger or
+      // the component. FreeNotification lets us stop without dereferencing it.
+      if (Guard.Logger = nil) or (Guard.Target = nil) then
+        Exit;
       if FLogFormat = slfJSON then
       begin
         Extension := '.jsonl';
@@ -1400,6 +1469,8 @@ begin
     except
       on LogError: Exception do
       begin
+        if Guard.Logger = nil then
+          Exit;
         FLastWriteError := MaskText(LogError.ClassName + ': ' + LogError.Message);
         OutputDebugString(PChar('SkyLog: ' + FLastWriteError));
         if Assigned(FOnWriteError) then
@@ -1411,7 +1482,9 @@ begin
       end;
     end;
   finally
-    FWriting := False;
+    if Guard.Logger <> nil then
+      Guard.Logger.FWriting := False;
+    Guard.Free;
   end;
 end;
 
@@ -1465,29 +1538,38 @@ procedure TSkyLog.Execute(Component: TComponent; const EventName: string;
   const Action: TProc);
 var
   Frame: TLogFrame;
+  Guard: TSkyHook;
 begin
+  if GetCurrentThreadId <> MainThreadID then
+    raise EInvalidOperation.Create('SkyLog.Execute deve executar na thread principal.');
   if not Assigned(Action) then
     raise EArgumentNilException.Create('Action');
   if Component = nil then
     Component := MonitoredRoot;
   if not OwnsComponent(Component) then
     raise EArgumentException.Create('O componente informado nao pertence ao escopo deste SkyLog.');
-  EnterFrame(Frame, Component, EventName, '');
+  Guard := TSkyHook.CreateHook(Self, Component);
   try
+    EnterFrame(Frame, Component, EventName, '');
     try
-      Action();
-      Frame.Failure := nil;
-    except
-      on E: Exception do
-      begin
-        if Frame.Failure <> E then
-          WriteException(E, Component, EventName, '', 'Operacao', ExceptAddr);
-        Frame.Failure := E;
-        raise;
+      try
+        Action();
+        Frame.Failure := nil;
+      except
+        on E: Exception do
+        begin
+          if (Guard.Logger <> nil) and (Guard.Target <> nil) and
+            (Frame.Failure <> E) then
+            Guard.Logger.WriteException(E, Guard.Target, EventName, '', 'Operacao', ExceptAddr);
+          Frame.Failure := E;
+          raise;
+        end;
       end;
+    finally
+      LeaveFrame(Frame);
     end;
   finally
-    LeaveFrame(Frame);
+    Guard.Free;
   end;
 end;
 
@@ -1498,9 +1580,6 @@ initialization
   FileLock := TObject.Create;
   FileParts := TDictionary<string, Integer>.Create;
   CleanupDates := TDictionary<string, TDateTime>.Create;
-{$IF CompilerVersion >= 37.0}
-  Retirement := TSkyRetirement.Create;
-{$IFEND}
 
 finalization
   UnRegisterClass(TSkyLog);
